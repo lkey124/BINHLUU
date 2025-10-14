@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ai là Người nói dối? 1.2 - Multiplayer</title>
+    <title>Ai là Người nói dối? - Multiplayer</title>
     <!-- Tải Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Tải Firebase Modules -->
     <script type="module">
+        // Chỉ cần import Firestore
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, getDoc, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Khai báo biến toàn cục (Sử dụng window object để JS thuần có thể truy cập)
-        window.firebaseImports = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged, getFirestore, doc, setDoc, onSnapshot, collection, getDoc, updateDoc, arrayUnion };
+        window.firebaseImports = { initializeApp, getFirestore, doc, setDoc, onSnapshot, collection, getDoc, updateDoc, arrayUnion };
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -300,8 +300,9 @@
         // Thêm các cặp từ còn lại ở đây (100 cặp đã được thêm, tổng cộng khoảng 500 cặp nếu bạn cần đầy đủ 1000 từ)
     ]; 
     
-    let db, auth;
-    let currentUser = null;
+    let db;
+    // Thay đổi: currentUser giờ chỉ là một object chứa uid
+    let currentUser = { uid: null }; 
     let roomCode = null;
     let roomListener = null;
     let playerName = localStorage.getItem('playerName') || 'Người chơi ẩn danh';
@@ -311,7 +312,7 @@
         code: null,
         status: 'SETUP', // 'SETUP', 'IN_GAME', 'ENDED'
         hostId: null,
-        players: [], // [{uid, name, photoURL, isReady, role, word}]
+        players: [], // [{uid, name, role, word}]
         liarCount: 1,
         gameWords: { normal: '', liar: '' },
         descriptionOrder: [], // list of uid
@@ -320,68 +321,47 @@
     const MAX_PLAYERS = 15;
     const MAX_LIARS = 5;
 
-    // --- FIREBASE INITIALIZATION AND AUTH ---
+    // --- FIREBASE INITIALIZATION AND AUTH (ĐÃ SỬA) ---
 
     window.initFirebase = async () => {
         try {
-            const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore } = window.firebaseImports;
+            const { initializeApp, getFirestore } = window.firebaseImports;
             
             // Lấy biến global được cung cấp bởi môi trường Canvas
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
-            auth = getAuth(app);
             
-            // 1. Cố gắng đăng nhập với token tùy chỉnh (từ Canvas)
-            if (typeof __initial_auth_token !== 'undefined') {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                 // 2. Dự phòng: Đăng nhập ẩn danh với Retry Mechanism (3 lần)
-                 for (let attempt = 0; attempt < 3; attempt++) {
-                    try {
-                        await signInAnonymously(auth);
-                        break; // Thành công! Thoát khỏi vòng lặp
-                    } catch (signInError) {
-                        console.warn(`Anonymous sign-in attempt ${attempt + 1} failed. Retrying...`);
-                        if (attempt < 2) {
-                            // Exponential Backoff: Chờ 1s, 2s, 4s
-                            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); 
-                        } else {
-                            // Sau 3 lần thất bại, throw ra lỗi cuối cùng
-                            throw signInError; 
-                        }
-                    }
-                }
+            // 1. Thay thế Auth bằng việc tạo UID cục bộ (SỬ DỤNG crypto.randomUUID)
+            let userId = localStorage.getItem('localUserId');
+            if (!userId) {
+                // Tạo ID duy nhất mới nếu chưa có
+                userId = crypto.randomUUID(); 
+                localStorage.setItem('localUserId', userId);
             }
-
-            // Lắng nghe trạng thái xác thực
-            onAuthStateChanged(auth, (user) => {
-                currentUser = user;
-                updateAuthUI();
-                if (user) {
-                    document.getElementById('name-input-section').classList.remove('hidden');
-                    // Tự động vào Lobby sau khi có ID người chơi
-                    document.getElementById('lobby-section').classList.remove('hidden');
-                    if (roomCode) joinRoom(roomCode); 
-                }
-            });
             
+            currentUser.uid = userId;
+            
+            // Cập nhật UI ngay lập tức
+            updateAuthUI();
+            
+            // Hiển thị Name Input và Lobby
+            document.getElementById('name-input-section').classList.remove('hidden');
+            document.getElementById('lobby-section').classList.remove('hidden');
+
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
-            // Thêm mã lỗi để phân biệt
-            customAlert("Lỗi khởi tạo dịch vụ (Mã: 001). Vui lòng tải lại trang."); 
+            // Sẽ không bị lỗi 001 nữa vì Auth đã bị loại bỏ
+            customAlert("Lỗi khởi tạo dịch vụ (Mã: 002 - Firebase/Firestore). Vui lòng tải lại trang."); 
         }
     };
     
     // --- FIREBASE UTILITIES ---
 
     function getRoomDocRef(code) {
-        // Sử dụng __app_id và cấu trúc firestore đã định nghĩa cho public data
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const { doc, getFirestore } = window.firebaseImports;
-        return doc(getFirestore(window.firebaseImports.initializeApp(JSON.parse(__firebase_config))), 'artifacts', appId, 'public', 'data', 'rooms', code);
+        const { doc } = window.firebaseImports;
+        return doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
     }
 
     function generateRoomCode() {
@@ -412,7 +392,7 @@
     // --- LOBBY/ROOM MANAGEMENT ---
 
     const createRoom = async () => {
-        if (!currentUser) return customAlert("Lỗi xác thực. Vui lòng làm mới trang.");
+        if (!currentUser.uid) return customAlert("Lỗi ID người chơi. Vui lòng làm mới trang.");
         
         let newCode = generateRoomCode();
         try {
@@ -444,12 +424,12 @@
             customAlert(`Phòng đã được tạo thành công! Mã phòng: ${newCode}`);
         } catch (error) {
             console.error("Error creating room:", error);
-            customAlert("Lỗi khi tạo phòng. Vui lòng thử lại.");
+            customAlert("Lỗi khi tạo phòng (Mã: 003). Vui lòng thử lại.");
         }
     };
 
     const joinRoom = async (code = null) => {
-        if (!currentUser) return customAlert("Lỗi xác thực. Vui lòng làm mới trang.");
+        if (!currentUser.uid) return customAlert("Lỗi ID người chơi. Vui lòng làm mới trang.");
         
         const codeToJoin = code || document.getElementById('join-room-code').value.toUpperCase().trim();
         if (!codeToJoin) return customAlert("Vui lòng nhập mã phòng.");
@@ -502,7 +482,7 @@
     };
 
     const leaveRoom = async () => {
-        if (!roomCode || !currentUser) {
+        if (!roomCode || !currentUser.uid) {
             resetGame(); 
             return;
         }
@@ -570,10 +550,11 @@
         // Khởi tạo giá trị input tên
         nameInputField.value = playerName;
 
-        if (currentUser) {
+        if (currentUser.uid) {
             userInfoDiv.innerHTML = `<p class="text-sm text-gray-800 font-semibold">Tên hiện tại: <span class="text-indigo-600">${playerName}</span></p><p class="text-xs text-gray-500">ID người chơi: ${currentUser.uid.substring(0, 8)}...</p>`;
             document.getElementById('name-input-section').classList.remove('hidden');
         } else {
+            // Hiển thị trạng thái lỗi nếu không có UID (rất hiếm khi xảy ra với ID cục bộ)
             userInfoDiv.innerHTML = `<p class="text-sm text-red-600 font-semibold">Đang đợi ID người chơi...</p>`;
             document.getElementById('name-input-section').classList.add('hidden');
         }
@@ -587,7 +568,7 @@
         document.getElementById('setup-section').classList.add('hidden');
         document.getElementById('game-section').classList.add('hidden');
         
-        const isHost = roomState.hostId === currentUser?.uid;
+        const isHost = roomState.hostId === currentUser.uid;
 
         if (roomState.status === 'SETUP') {
             if (isHost) {
@@ -641,7 +622,7 @@
         document.getElementById('normal-count').textContent = total - liar;
 
         // Cập nhật Firestore nếu là host và có thay đổi
-        if (updateFirestore && roomState.hostId === currentUser?.uid && roomCode && roomState.liarCount !== liar) {
+        if (updateFirestore && roomState.hostId === currentUser.uid && roomCode && roomState.liarCount !== liar) {
             const roomRef = getRoomDocRef(roomCode);
             window.firebaseImports.updateDoc(roomRef, { liarCount: liar }).catch(e => console.error("Error updating liar count:", e));
         }
@@ -715,7 +696,7 @@
     // --- GAME LOGIC (HOST ACTIONS) ---
 
     const hostStartGame = async () => {
-        if (!roomCode || roomState.hostId !== currentUser?.uid) return;
+        if (!roomCode || roomState.hostId !== currentUser.uid) return;
         if (roomState.players.length < 3) return customAlert("Cần ít nhất 3 người chơi để bắt đầu.");
         
         try {
@@ -762,7 +743,7 @@
     };
 
     const nextSpeaker = async () => {
-        if (!roomCode || roomState.hostId !== currentUser?.uid || roomState.status !== 'IN_GAME') return;
+        if (!roomCode || roomState.hostId !== currentUser.uid || roomState.status !== 'IN_GAME') return;
         
         try {
             const { updateDoc } = window.firebaseImports;
@@ -780,7 +761,7 @@
     };
 
     const endGame = async () => {
-         if (!roomCode || roomState.hostId !== currentUser?.uid || roomState.status !== 'IN_GAME') return;
+         if (!roomCode || roomState.hostId !== currentUser.uid || roomState.status !== 'IN_GAME') return;
 
          const accusedUid = document.getElementById('accused-player').value;
          if (!accusedUid) return customAlert('Vui lòng chọn một người bị tình nghi.');
@@ -807,7 +788,7 @@
     };
     
     function revealRole(player) {
-        if (!currentUser || player.uid !== currentUser.uid) {
+        if (!currentUser.uid || player.uid !== currentUser.uid) {
             return customAlert("Bạn chỉ có thể xem vai trò và từ của chính mình.");
         }
         
@@ -911,8 +892,7 @@
         }
 
         window.initFirebase().then(() => {
-            // Hiển thị Name Input và Lobby sau khi có UID ẩn danh
-             updateAuthUI();
+            // Sau khi có UID cục bộ, UI sẽ được cập nhật và hiển thị form nhập tên.
         });
         document.getElementById('total-players-in-room').textContent = 0;
         document.getElementById('normal-count').textContent = 0;
