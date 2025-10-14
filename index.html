@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ai là Người nói dối? PHIÊN BẢN 1.1 - Multiplayer</title>
+    <title>Ai là Người nói dối? 1.2 - Multiplayer</title>
     <!-- Tải Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Tải Firebase Modules -->
@@ -338,8 +338,22 @@
             if (typeof __initial_auth_token !== 'undefined') {
                 await signInWithCustomToken(auth, __initial_auth_token);
             } else {
-                 // 2. Dự phòng: Đăng nhập ẩn danh để có UID
-                 await signInAnonymously(auth);
+                 // 2. Dự phòng: Đăng nhập ẩn danh với Retry Mechanism (3 lần)
+                 for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        await signInAnonymously(auth);
+                        break; // Thành công! Thoát khỏi vòng lặp
+                    } catch (signInError) {
+                        console.warn(`Anonymous sign-in attempt ${attempt + 1} failed. Retrying...`);
+                        if (attempt < 2) {
+                            // Exponential Backoff: Chờ 1s, 2s, 4s
+                            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); 
+                        } else {
+                            // Sau 3 lần thất bại, throw ra lỗi cuối cùng
+                            throw signInError; 
+                        }
+                    }
+                }
             }
 
             // Lắng nghe trạng thái xác thực
@@ -356,7 +370,8 @@
             
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
-            customAlert("Lỗi khởi tạo dịch vụ. Vui lòng thử lại.");
+            // Thêm mã lỗi để phân biệt
+            customAlert("Lỗi khởi tạo dịch vụ (Mã: 001). Vui lòng tải lại trang."); 
         }
     };
     
