@@ -40,15 +40,14 @@
          * ==========================================================
          * BƯỚC SỬA LỖI QUAN TRỌNG NHẤT: THAY THẾ CẤU HÌNH CỦA BẠN VÀO ĐÂY
          * ==========================================================
-         * * LƯU Ý: Nếu bạn đang chạy game trong môi trường Canvas, hãy giữ nguyên 'null'.
-         * Nếu chạy trên GitHub Pages, BẮT BUỘC phải thay thế bằng cấu hình THẬT 
-         * của dự án Firebase của bạn.
-         * * Vui lòng thay thế các giá trị MẪU sau:
+         * * Vui lòng thay thế các chuỗi giá trị (TEXT TRONG DẤU "") sau bằng cấu hình THẬT 
+         * * của dự án Firebase của bạn.
+         * * Đảm bảo các dịch vụ Firestore Database và Authentication đã được BẬT.
          */
         const USER_FIREBASE_CONFIG = {
-            apiKey: "AZzASyD1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5", // <-- Thay bằng API Key thật
-            authDomain: "my-liar-game.firebaseapp.com",     // <-- Thay bằng Auth Domain thật
-            projectId: "my-liar-game",                       // <-- Thay bằng Project ID thật
+            apiKey: "AZzASyD1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5", // <-- THAY BẰNG API Key thật (ví dụ: "AIzaSy...")
+            authDomain: "my-liar-game.firebaseapp.com",     // <-- THAY BẰNG Auth Domain thật
+            projectId: "my-liar-game",                       // <-- THAY BẰNG Project ID thật
             storageBucket: "my-liar-game.appspot.com",
             messagingSenderId: "123456789012",
             appId: "1:123456789012:web:abcdefghijklmn"
@@ -58,7 +57,9 @@
         // Global variables provided by the Canvas environment
         window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-liar-app-id';
         // Sử dụng cấu hình người dùng cung cấp nếu có, hoặc mặc định từ Canvas
-        window.__firebase_config = USER_FIREBASE_CONFIG ? JSON.stringify(USER_FIREBASE_CONFIG) : (typeof __firebase_config !== 'undefined' ? __firebase_config : null);
+        window.__firebase_config = USER_FIREBASE_CONFIG.apiKey !== "AZzASyD1E2F3G4H5I6J7K8L9M0N1O2P3Q4R5" 
+                                   ? JSON.stringify(USER_FIREBASE_CONFIG) 
+                                   : (typeof __firebase_config !== 'undefined' ? __firebase_config : null);
         window.__initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Make Firebase functions globally accessible to the Babel script
@@ -90,6 +91,7 @@
             "Đàn piano", "Vũ trụ", "Bầu trời", "Ống kính", "Tờ báo",
             "Bàn phím", "Mũ bảo hiểm", "Hoa hồng", "Máy bay", "Kim cương",
             "Điện thoại", "Bánh mì", "Sữa chua", "Áo mưa", "Cầu vồng",
+            "Mây", "Mưa", "Gió", "Cây", "Nước", "Lửa", "Đất", "Kim loại", 
             // Thêm các từ khác vào đây để đủ 300 từ
         ];
 
@@ -127,7 +129,7 @@
             useEffect(() => {
                 // KIỂM TRA LỖI CẤU HÌNH TẠI ĐÂY
                 if (!firebaseConfig) {
-                    setError("Lỗi cấu hình Firebase. Vui lòng kiểm tra lại môi trường (dán cấu hình vào dòng 34).");
+                    setError("Lỗi cấu hình Firebase. Vui lòng kiểm tra lại môi trường (chưa điền cấu hình hoặc bị sai cú pháp).");
                     return;
                 }
 
@@ -138,7 +140,8 @@
 
                     setDb(firestore);
                     setAuth(firebaseAuth);
-
+                    // setLogLevel('debug'); // Bỏ comment nếu muốn xem log chi tiết
+                    
                     const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
                         if (user) {
                             setUserId(user.uid);
@@ -155,19 +158,22 @@
                                 await signInAnonymously(firebaseAuth);
                             }
                         }
+                        // Lấy userId sau khi đăng nhập (ẩn danh hoặc token)
+                        setUserId(firebaseAuth.currentUser?.uid || 'anonymous-user');
                         setIsAuthReady(true);
                     });
 
                     return () => unsubscribe();
                 } catch (e) {
                     console.error("Lỗi khởi tạo Firebase:", e);
+                    // Lỗi khởi tạo thường do key bị thiếu hoặc sai định dạng JSON
                     setError("Không thể khởi tạo dịch vụ game. Kiểm tra lại cấu hình Firebase.");
                 }
             }, [initialAuthToken]);
 
             // --- 2. Lắng nghe trạng thái phòng theo thời gian thực ---
             useEffect(() => {
-                if (!db || !isAuthReady || !roomCode) return;
+                if (!db || !isAuthReady || !roomCode || !userId) return;
 
                 const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, roomCode);
                 const unsubscribe = onSnapshot(roomRef, (docSnap) => {
@@ -195,7 +201,7 @@
                 });
 
                 return () => unsubscribe();
-            }, [db, isAuthReady, roomCode]);
+            }, [db, isAuthReady, roomCode, userId]);
 
 
             // --- 3. Logic Tạo/Vào/Rời Phòng ---
@@ -214,17 +220,26 @@
                 setError('');
 
                 let newRoomCode = generateRoomCode();
-                let roomExists = true;
-
-                // Đảm bảo mã phòng là duy nhất
-                try {
+                let isUnique = false;
+                
+                // Đảm bảo mã phòng là duy nhất (kiểm tra 3 lần)
+                for (let i = 0; i < 3; i++) {
                     const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
                     const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', newRoomCode)));
-                    
-                    if (!docSnap.empty) { 
-                        newRoomCode = generateRoomCode();
+                    if (docSnap.empty) { 
+                        isUnique = true;
+                        break;
                     }
+                    newRoomCode = generateRoomCode();
+                }
 
+                if (!isUnique) {
+                    setError("Không thể tạo mã phòng độc nhất. Vui lòng thử lại.");
+                    setLoading(false);
+                    return;
+                }
+
+                try {
                     const roomToCreateRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
                     const newRoom = {
                         roomId: newRoomCode,
@@ -269,8 +284,9 @@
                 const code = roomCode.toUpperCase();
 
                 try {
-                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, code);
-                    const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', code)));
+                    // Query theo roomId vì ID document (mã phòng) có thể không trùng với roomId
+                    const roomQuery = query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', code));
+                    const docSnap = await getDocs(roomQuery);
 
                     if (docSnap.empty) {
                         setError("Mã phòng không hợp lệ.");
@@ -279,16 +295,18 @@
                     }
 
                     const roomData = docSnap.docs[0].data();
+                    const roomDocRef = docSnap.docs[0].ref; // Lấy Document Reference
+                    
                     const existingPlayer = roomData.players.find(p => p.id === userId);
                     
                     if (existingPlayer) {
                          // Player is rejoining or already in. Update name if different.
                          if (existingPlayer.name !== playerName) {
-                            await updateDoc(roomRef, {
+                            await updateDoc(roomDocRef, {
                                 players: roomData.players.map(p => p.id === userId ? { ...p, name: playerName } : p)
                             });
                          }
-                        setRoomCode(roomData.roomId); // Use the correct case from Firestore
+                        setRoomCode(roomData.roomId); 
                         return;
                     }
                     
@@ -313,7 +331,7 @@
                         isConnected: true
                     };
 
-                    await updateDoc(roomRef, {
+                    await updateDoc(roomDocRef, {
                         players: [...roomData.players, newPlayer],
                     });
                     setRoomCode(roomData.roomId);
