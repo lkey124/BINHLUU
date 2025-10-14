@@ -1,824 +1,865 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
-import { setLogLevel } from 'firebase/firestore';
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI LÀ NGƯỜI NÓI DỐI? (The Liar Game)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
 
-// Bật log debug cho Firestore
-// setLogLevel('Debug');
-
-// --- Cấu hình và Khởi tạo Firebase ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-liar-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// Danh sách từ bí mật (ví dụ, bạn có thể mở rộng lên 300 từ)
-const WORD_LIST = [
-    "Cà phê", "Máy tính", "Sách giáo khoa", "Tháp Eiffel", "Sóng biển",
-    "Bóng đá", "Dưa hấu", "Xe đạp", "Núi lửa", "Khách sạn",
-    "Phim hoạt hình", "Kem", "Đồng hồ", "Thư viện", "Rừng nhiệt đới",
-    "Đàn piano", "Vũ trụ", "Bầu trời", "Ống kính", "Tờ báo"
-];
-
-const MAX_PLAYERS = 15;
-
-const App = () => {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    
-    // Trạng thái game
-    const [playerName, setPlayerName] = useState('');
-    const [roomCode, setRoomCode] = useState('');
-    const [room, setRoom] = useState(null);
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
-
-    // Trạng thái cấu hình (chỉ Host dùng)
-    const [liarCount, setLiarCount] = useState(1);
-    const [totalPlayerLimit, setTotalPlayerLimit] = useState(3);
-    
-    // Tên người chơi hiện tại (lấy từ room.players)
-    const playerSelf = useMemo(() => {
-        return room?.players.find(p => p.id === userId) || null;
-    }, [room, userId]);
-
-    // Trạng thái game local (dùng cho modal bầu chọn)
-    const [isVoting, setIsVoting] = useState(false);
-    const [votedPlayerName, setVotedPlayerName] = useState(null);
-    const [votingError, setVotingError] = useState('');
-    const [winnerMessage, setWinnerMessage] = useState('');
-
-    // --- 1. Khởi tạo Firebase và Xác thực ---
-    useEffect(() => {
-        if (!firebaseConfig) {
-            setError("Lỗi cấu hình Firebase. Vui lòng kiểm tra lại môi trường.");
-            return;
+        /* CSS cho hiệu ứng nhấp nháy */
+        @keyframes pulse-turn {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
         }
+        
+        .animate-pulse-turn {
+            animation: pulse-turn 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+    <div id="root"></div>
 
-        try {
-            const firebaseApp = initializeApp(firebaseConfig);
-            const firestore = getFirestore(firebaseApp);
-            const firebaseAuth = getAuth(firebaseApp);
+    <!-- React, ReactDOM, và Babel CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Firebase CDNs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-            setDb(firestore);
-            setAuth(firebaseAuth);
+        // Global variables provided by the Canvas environment
+        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-liar-app-id';
+        window.__firebase_config = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        window.__initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    // Đăng nhập ban đầu với token hoặc ẩn danh
-                    if (initialAuthToken) {
-                        try {
-                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                        } catch (e) {
-                            console.error("Lỗi đăng nhập với token tùy chỉnh:", e);
-                            await signInAnonymously(firebaseAuth);
+        // Make Firebase functions globally accessible to the Babel script
+        window.firebase = {
+            initializeApp,
+            getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc, setLogLevel
+        };
+    </script>
+
+    <script type="text/babel">
+        // Sử dụng window.firebase để truy cập các hàm Firebase đã được định nghĩa ở trên
+        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, onSnapshot, collection, query, where, getDocs, updateDoc } = window.firebase;
+        const React = window.React;
+        const ReactDOM = window.ReactDOM;
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+        // --- Cấu hình và Khởi tạo Firebase ---
+        const appId = window.__app_id;
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
+        const initialAuthToken = window.__initial_auth_token;
+
+        // Danh sách từ bí mật (ví dụ, bạn có thể mở rộng lên 300 từ)
+        const WORD_LIST = [
+            "Cà phê", "Máy tính", "Sách giáo khoa", "Tháp Eiffel", "Sóng biển",
+            "Bóng đá", "Dưa hấu", "Xe đạp", "Núi lửa", "Khách sạn",
+            "Phim hoạt hình", "Kem", "Đồng hồ", "Thư viện", "Rừng nhiệt đới",
+            "Đàn piano", "Vũ trụ", "Bầu trời", "Ống kính", "Tờ báo",
+            "Bàn phím", "Mũ bảo hiểm", "Hoa hồng", "Máy bay", "Kim cương",
+            "Điện thoại", "Bánh mì", "Sữa chua", "Áo mưa", "Cầu vồng"
+        ];
+
+        const MAX_PLAYERS = 15;
+
+        const App = () => {
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            
+            // Trạng thái game
+            const [playerName, setPlayerName] = useState('');
+            const [roomCode, setRoomCode] = useState('');
+            const [room, setRoom] = useState(null);
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            // Trạng thái cấu hình (chỉ Host dùng)
+            const [liarCount, setLiarCount] = useState(1);
+            const [totalPlayerLimit, setTotalPlayerLimit] = useState(3);
+            
+            // Tên người chơi hiện tại (lấy từ room.players)
+            const playerSelf = useMemo(() => {
+                return room?.players.find(p => p.id === userId) || null;
+            }, [room, userId]);
+
+            // Trạng thái game local (dùng cho modal bầu chọn)
+            const [isVoting, setIsVoting] = useState(false);
+            const [votedPlayerName, setVotedPlayerName] = useState(null);
+            const [votingError, setVotingError] = useState('');
+            const [winnerMessage, setWinnerMessage] = useState('');
+
+            // --- 1. Khởi tạo Firebase và Xác thực ---
+            useEffect(() => {
+                if (!firebaseConfig) {
+                    setError("Lỗi cấu hình Firebase. Vui lòng kiểm tra lại môi trường.");
+                    return;
+                }
+
+                try {
+                    const firebaseApp = initializeApp(firebaseConfig);
+                    const firestore = getFirestore(firebaseApp);
+                    const firebaseAuth = getAuth(firebaseApp);
+
+                    setDb(firestore);
+                    setAuth(firebaseAuth);
+
+                    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                        } else {
+                            // Đăng nhập ban đầu với token hoặc ẩn danh
+                            if (initialAuthToken) {
+                                try {
+                                    await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                                } catch (e) {
+                                    console.error("Lỗi đăng nhập với token tùy chỉnh:", e);
+                                    await signInAnonymously(firebaseAuth);
+                                }
+                            } else {
+                                await signInAnonymously(firebaseAuth);
+                            }
                         }
+                        setIsAuthReady(true);
+                    });
+
+                    return () => unsubscribe();
+                } catch (e) {
+                    console.error("Lỗi khởi tạo Firebase:", e);
+                    setError("Không thể khởi tạo dịch vụ game.");
+                }
+            }, [initialAuthToken]);
+
+            // --- 2. Lắng nghe trạng thái phòng theo thời gian thực ---
+            useEffect(() => {
+                if (!db || !isAuthReady || !roomCode) return;
+
+                const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, roomCode);
+                const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const roomData = docSnap.data();
+                        setRoom(roomData);
+
+                        if (roomData.status === 'FINISHED' && roomData.winnerMessage && !winnerMessage) {
+                            setWinnerMessage(roomData.winnerMessage);
+                        }
+                        // Reset voting state if room status changes
+                        if (roomData.status === 'IN_GAME' && roomData.votes && Object.keys(roomData.votes).length === 0) {
+                            setIsVoting(false);
+                        }
+
                     } else {
-                        await signInAnonymously(firebaseAuth);
+                        setRoom(null);
+                        setRoomCode('');
+                        setWinnerMessage('');
+                        setError('Phòng không tồn tại hoặc đã bị hủy.');
+                    }
+                }, (err) => {
+                    console.error("Lỗi lắng nghe Firestore:", err);
+                    setError("Lỗi kết nối thời gian thực.");
+                });
+
+                return () => unsubscribe();
+            }, [db, isAuthReady, roomCode]);
+
+
+            // --- 3. Logic Tạo/Vào/Rời Phòng ---
+            
+            // Hàm tạo mã phòng ngẫu nhiên 4 chữ số
+            const generateRoomCode = useCallback(() => {
+                return Math.floor(1000 + Math.random() * 9000).toString();
+            }, []);
+
+            const createRoom = async () => {
+                if (!db || !userId || !playerName) {
+                    setError("Vui lòng nhập tên và đảm bảo xác thực thành công.");
+                    return;
+                }
+                setLoading(true);
+                setError('');
+
+                let newRoomCode = generateRoomCode();
+                let roomExists = true;
+
+                // Đảm bảo mã phòng là duy nhất (sử dụng doc() thay vì query + getDocs cho phòng)
+                // Tuy nhiên, để đảm bảo tính duy nhất, ta vẫn cần kiểm tra.
+                // Ở đây ta dùng doc() với mã phòng làm ID để tối ưu.
+                
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
+                    const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', newRoomCode)));
+                    
+                    if (!docSnap.empty) { // If a room with this ID exists, try again (unlikely but safe)
+                        newRoomCode = generateRoomCode();
+                    }
+
+                    const roomToCreateRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
+                    const newRoom = {
+                        roomId: newRoomCode,
+                        hostId: userId,
+                        status: 'LOBBY',
+                        secretWord: '',
+                        liarCount: 1,
+                        players: [{
+                            id: userId,
+                            name: playerName,
+                            role: 'PENDING',
+                            isHost: true,
+                            isConnected: true
+                        }],
+                        currentPlayerIndex: 0,
+                        currentTurn: playerName,
+                        gameStarted: false,
+                        votes: {},
+                        winnerMessage: '',
+                        createdAt: new Date().toISOString()
+                    };
+
+                    await setDoc(roomToCreateRef, newRoom);
+                    setRoomCode(newRoomCode);
+                    setTotalPlayerLimit(3);
+                } catch (e) {
+                    console.error("Lỗi tạo phòng:", e);
+                    setError("Không thể tạo phòng. Vui lòng thử lại.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const joinRoom = async () => {
+                if (!db || !userId || !playerName || !roomCode) {
+                    setError("Vui lòng nhập tên và mã phòng.");
+                    return;
+                }
+                setLoading(true);
+                setError('');
+
+                const code = roomCode.toUpperCase();
+
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, code);
+                    const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', code)));
+
+                    if (docSnap.empty) {
+                        setError("Mã phòng không hợp lệ.");
+                        setLoading(false);
+                        return;
+                    }
+
+                    const roomData = docSnap.docs[0].data();
+                    const existingPlayer = roomData.players.find(p => p.id === userId);
+                    
+                    if (existingPlayer) {
+                         // Player is rejoining or already in. Update name if different.
+                         if (existingPlayer.name !== playerName) {
+                            await updateDoc(roomRef, {
+                                players: roomData.players.map(p => p.id === userId ? { ...p, name: playerName } : p)
+                            });
+                         }
+                        setRoomCode(roomData.roomId); // Use the correct case from Firestore
+                        return;
+                    }
+                    
+                    if (roomData.players.length >= MAX_PLAYERS) {
+                        setError(`Phòng đã đầy (Tối đa ${MAX_PLAYERS} người).`);
+                        setLoading(false);
+                        return;
+                    }
+                    
+                    if (roomData.status !== 'LOBBY') {
+                        setError("Game đã bắt đầu, không thể tham gia.");
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Thêm người chơi mới
+                    const newPlayer = {
+                        id: userId,
+                        name: playerName,
+                        role: 'PENDING',
+                        isHost: false,
+                        isConnected: true
+                    };
+
+                    await updateDoc(roomRef, {
+                        players: [...roomData.players, newPlayer],
+                    });
+                    setRoomCode(roomData.roomId);
+
+                } catch (e) {
+                    console.error("Lỗi tham gia phòng:", e);
+                    setError("Không thể tham gia phòng. Vui lòng kiểm tra mã phòng.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            const leaveRoom = async () => {
+                if (!db || !room || !userId) return;
+
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
+                    
+                    if (playerSelf && playerSelf.isHost) {
+                        // Nếu là Host, hủy phòng
+                        await setDoc(roomRef, {
+                            status: 'FINISHED',
+                            winnerMessage: `Phòng bị hủy do Host (${playerSelf.name}) đã rời đi.`
+                        }, { merge: true });
+                    } else {
+                        // Nếu là người chơi thường, loại khỏi danh sách
+                        await updateDoc(roomRef, {
+                            players: room.players.filter(p => p.id !== userId)
+                        });
+                    }
+                    
+                    setRoomCode('');
+                    setRoom(null);
+                    setWinnerMessage('');
+                } catch (e) {
+                    console.error("Lỗi rời phòng:", e);
+                    setError("Không thể rời phòng.");
+                }
+            };
+
+
+            // --- 4. Logic Game Start (Host only) ---
+            const handleStartGame = async () => {
+                if (!db || !room || !playerSelf.isHost) return;
+                
+                const totalPlayers = room.players.length;
+                if (totalPlayers < totalPlayerLimit) {
+                    setError(`Cần ít nhất ${totalPlayerLimit} người chơi để bắt đầu.`);
+                    return;
+                }
+                if (liarCount >= totalPlayers) {
+                    setError("Số lượng người nói dối phải ít hơn tổng số người chơi.");
+                    return;
+                }
+
+                // 1. Chọn từ bí mật
+                const randomIndex = Math.floor(Math.random() * WORD_LIST.length);
+                const secretWord = WORD_LIST[randomIndex];
+                
+                // 2. Phân vai trò
+                let assignedRoles = new Array(totalPlayers).fill('CIVILIAN');
+                const liarIndices = [];
+                while (liarIndices.length < liarCount) {
+                    const r = Math.floor(Math.random() * totalPlayers);
+                    if (!liarIndices.includes(r)) {
+                        liarIndices.push(r);
+                        assignedRoles[r] = 'LIAR';
                     }
                 }
-                setIsAuthReady(true);
-            });
-
-            return () => unsubscribe();
-        } catch (e) {
-            console.error("Lỗi khởi tạo Firebase:", e);
-            setError("Không thể khởi tạo dịch vụ game.");
-        }
-    }, [initialAuthToken]);
-
-    // --- 2. Lắng nghe trạng thái phòng theo thời gian thực ---
-    useEffect(() => {
-        if (!db || !isAuthReady || !roomCode) return;
-
-        const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, roomCode);
-        const unsubscribe = onSnapshot(roomRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const roomData = docSnap.data();
-                setRoom(roomData);
-
-                // Tự động chuyển người chơi ra khỏi phòng nếu phòng bị hủy
-                if (roomData.status === 'FINISHED' && roomData.winnerMessage) {
-                    setWinnerMessage(roomData.winnerMessage);
+                
+                // Đảo ngẫu nhiên thứ tự mô tả
+                let shuffledPlayers = room.players.map((player, index) => ({
+                    ...player,
+                    role: assignedRoles[index],
+                }));
+                // Simple shuffle implementation
+                for (let i = shuffledPlayers.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffledPlayers[i], shuffledPlayers[j]] = [shuffledPlayers[j], shuffledPlayers[i]];
                 }
-            } else {
-                setRoom(null);
-                setRoomCode('');
-                setWinnerMessage('');
-                setError('Phòng không tồn tại hoặc đã bị hủy.');
-            }
-        }, (err) => {
-            console.error("Lỗi lắng nghe Firestore:", err);
-            setError("Lỗi kết nối thời gian thực.");
-        });
+                
+                const initialPlayerName = shuffledPlayers[0].name;
 
-        return () => unsubscribe();
-    }, [db, isAuthReady, roomCode]);
-
-
-    // --- 3. Logic Tạo/Vào/Rời Phòng ---
-    
-    // Hàm tạo mã phòng ngẫu nhiên 4 chữ số
-    const generateRoomCode = useCallback(() => {
-        return Math.floor(1000 + Math.random() * 9000).toString();
-    }, []);
-
-    const createRoom = async () => {
-        if (!db || !userId || !playerName) {
-            setError("Vui lòng nhập tên và đảm bảo xác thực thành công.");
-            return;
-        }
-        setLoading(true);
-        setError('');
-
-        let newRoomCode = generateRoomCode();
-        let roomExists = true;
-
-        // Đảm bảo mã phòng là duy nhất
-        while (roomExists) {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
-            const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', newRoomCode)));
-            if (docSnap.empty) {
-                roomExists = false;
-            } else {
-                newRoomCode = generateRoomCode(); // Tạo lại nếu bị trùng
-            }
-        }
-
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, newRoomCode);
-            const newRoom = {
-                roomId: newRoomCode,
-                hostId: userId,
-                status: 'LOBBY',
-                secretWord: '',
-                liarCount: 1,
-                players: [{
-                    id: userId,
-                    name: playerName,
-                    role: 'PENDING',
-                    isHost: true,
-                    isConnected: true
-                }],
-                currentPlayerIndex: 0,
-                currentTurn: playerName,
-                gameStarted: false,
-                votes: {},
-                winnerMessage: '',
-                createdAt: new Date()
-            };
-
-            await setDoc(roomRef, newRoom);
-            setRoomCode(newRoomCode);
-            setTotalPlayerLimit(3);
-        } catch (e) {
-            console.error("Lỗi tạo phòng:", e);
-            setError("Không thể tạo phòng. Vui lòng thử lại.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const joinRoom = async () => {
-        if (!db || !userId || !playerName || !roomCode) {
-            setError("Vui lòng nhập tên và mã phòng.");
-            return;
-        }
-        setLoading(true);
-        setError('');
-
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, roomCode.toUpperCase());
-            const docSnap = await getDocs(query(collection(db, `artifacts/${appId}/public/data/liar_rooms`), where('roomId', '==', roomCode.toUpperCase())));
-
-            if (docSnap.empty) {
-                setError("Mã phòng không hợp lệ.");
-                setLoading(false);
-                return;
-            }
-
-            const roomData = docSnap.docs[0].data();
-            const existingPlayer = roomData.players.find(p => p.id === userId);
-            
-            if (existingPlayer) {
-                 // Player is rejoining or already in. Update name if different.
-                 if (existingPlayer.name !== playerName) {
+                // 3. Cập nhật Firestore
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
                     await updateDoc(roomRef, {
-                        players: roomData.players.map(p => p.id === userId ? { ...p, name: playerName } : p)
+                        status: 'IN_GAME',
+                        secretWord: secretWord,
+                        liarCount: liarCount,
+                        players: shuffledPlayers, // Dùng danh sách đã shuffle
+                        currentPlayerIndex: 0,
+                        currentTurn: initialPlayerName,
+                        gameStarted: true,
+                        votes: {},
+                        winnerMessage: '',
                     });
-                 }
-                setRoomCode(roomData.roomId); // Use the correct case from Firestore
-                return;
-            }
-            
-            if (roomData.players.length >= MAX_PLAYERS) {
-                setError("Phòng đã đầy (Tối đa 15 người).");
-                setLoading(false);
-                return;
-            }
-            
-            if (roomData.status !== 'LOBBY') {
-                setError("Game đã bắt đầu, không thể tham gia.");
-                setLoading(false);
-                return;
-            }
-
-            // Thêm người chơi mới
-            const newPlayer = {
-                id: userId,
-                name: playerName,
-                role: 'PENDING',
-                isHost: false,
-                isConnected: true
-            };
-
-            await updateDoc(roomRef, {
-                players: [...roomData.players, newPlayer],
-            });
-            setRoomCode(roomData.roomId);
-
-        } catch (e) {
-            console.error("Lỗi tham gia phòng:", e);
-            setError("Không thể tham gia phòng. Vui lòng kiểm tra mã phòng.");
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    const leaveRoom = async () => {
-        if (!db || !room || !userId) return;
-
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
-            
-            if (playerSelf.isHost) {
-                // Nếu là Host, hủy phòng
-                await setDoc(roomRef, {
-                    status: 'FINISHED',
-                    winnerMessage: `Phòng bị hủy do Host (${playerSelf.name}) đã rời đi.`
-                }, { merge: true });
-                // Note: The onSnapshot listener will handle clearing local state for everyone
-            } else {
-                // Nếu là người chơi thường, loại khỏi danh sách
-                await updateDoc(roomRef, {
-                    players: room.players.filter(p => p.id !== userId)
-                });
-            }
-            
-            setRoomCode('');
-            setRoom(null);
-            setWinnerMessage('');
-        } catch (e) {
-            console.error("Lỗi rời phòng:", e);
-            setError("Không thể rời phòng.");
-        }
-    };
-
-
-    // --- 4. Logic Game Start (Host only) ---
-    const handleStartGame = async () => {
-        if (!db || !room || !playerSelf.isHost) return;
-        
-        const totalPlayers = room.players.length;
-        if (totalPlayers < totalPlayerLimit) {
-            setError(`Cần ít nhất ${totalPlayerLimit} người chơi để bắt đầu.`);
-            return;
-        }
-        if (liarCount >= totalPlayers) {
-            setError("Số lượng người nói dối phải ít hơn tổng số người chơi.");
-            return;
-        }
-
-        // 1. Chọn từ bí mật
-        const randomIndex = Math.floor(Math.random() * WORD_LIST.length);
-        const secretWord = WORD_LIST[randomIndex];
-        
-        // 2. Phân vai trò
-        let assignedRoles = new Array(totalPlayers).fill('CIVILIAN');
-        const liarIndices = [];
-        while (liarIndices.length < liarCount) {
-            const r = Math.floor(Math.random() * totalPlayers);
-            if (!liarIndices.includes(r)) {
-                liarIndices.push(r);
-                assignedRoles[r] = 'LIAR';
-            }
-        }
-        
-        const updatedPlayers = room.players.map((player, index) => ({
-            ...player,
-            role: assignedRoles[index],
-        }));
-
-        // 3. Cập nhật Firestore
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
-            await updateDoc(roomRef, {
-                status: 'IN_GAME',
-                secretWord: secretWord,
-                liarCount: liarCount, // Lưu lại cấu hình
-                players: updatedPlayers,
-                currentPlayerIndex: 0,
-                currentTurn: updatedPlayers[0].name,
-                gameStarted: true,
-                votes: {},
-                winnerMessage: '',
-            });
-            setError('');
-        } catch (e) {
-            console.error("Lỗi bắt đầu game:", e);
-            setError("Không thể bắt đầu game.");
-        }
-    };
-
-
-    // --- 5. Logic Chuyển Lượt Mô tả ---
-    const handleNextTurn = async () => {
-        if (!db || !room || room.status !== 'IN_GAME') return;
-        
-        const nextIndex = (room.currentPlayerIndex + 1) % room.players.length;
-        const nextPlayerName = room.players[nextIndex].name;
-        
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
-            await updateDoc(roomRef, {
-                currentPlayerIndex: nextIndex,
-                currentTurn: nextPlayerName,
-            });
-        } catch (e) {
-            console.error("Lỗi chuyển lượt:", e);
-            setError("Không thể chuyển lượt.");
-        }
-    };
-
-    // --- 6. Logic Bỏ phiếu / Kết thúc game ---
-
-    const callForVote = () => {
-        setIsVoting(true);
-        setVotingError('');
-        setVotedPlayerName(null);
-    };
-
-    const handleVote = async (votedPlayerName) => {
-        if (!db || !room || room.status !== 'IN_GAME' || isVoting === false) return;
-        if (room.votes[playerSelf.name]) {
-            setVotingError("Bạn đã bỏ phiếu rồi.");
-            return;
-        }
-
-        setVotedPlayerName(votedPlayerName);
-        setLoading(true);
-
-        try {
-            const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
-            const newVotes = { ...room.votes, [playerSelf.name]: votedPlayerName };
-
-            // Cập nhật phiếu bầu
-            await updateDoc(roomRef, {
-                votes: newVotes
-            });
-            
-            // Tạm thời ẩn modal, chờ cập nhật từ Firestore
-            setIsVoting(false);
-            setLoading(false);
-
-        } catch (e) {
-            console.error("Lỗi bỏ phiếu:", e);
-            setVotingError("Lỗi khi bỏ phiếu.");
-            setLoading(false);
-        }
-    };
-    
-    // Tally votes and determine winner
-    useEffect(() => {
-        if (!room || room.status !== 'IN_GAME') return;
-        
-        const totalPlayers = room.players.length;
-        const totalVotes = Object.keys(room.votes).length;
-
-        // Chỉ kiểm tra khi tất cả (trừ người nói dối?) đã bỏ phiếu.
-        // Đơn giản hóa: kiểm tra khi tất cả người chơi trong phòng đã bỏ phiếu.
-        if (totalVotes === totalPlayers) {
-            const voteTally = {};
-            for (const name in room.votes) {
-                voteTally[room.votes[name]] = (voteTally[room.votes[name]] || 0) + 1;
-            }
-            
-            // Tìm người bị bầu nhiều nhất
-            let maxVotes = 0;
-            let votedOutPlayerName = null;
-            
-            for (const name in voteTally) {
-                if (voteTally[name] > maxVotes) {
-                    maxVotes = voteTally[name];
-                    votedOutPlayerName = name;
+                    setError('');
+                } catch (e) {
+                    console.error("Lỗi bắt đầu game:", e);
+                    setError("Không thể bắt đầu game.");
                 }
-            }
-
-            if (!votedOutPlayerName) return;
-
-            const votedOutPlayer = room.players.find(p => p.name === votedOutPlayerName);
-
-            let message = '';
-            let isLiarFound = false;
-
-            if (votedOutPlayer.role === 'LIAR') {
-                message = `🎉 CHÚC MỪNG! Người bị loại là ${votedOutPlayerName}. Anh ta CHÍNH XÁC là KẺ NÓI DỐI! Phe Dân Thường THẮNG! (Từ bí mật: ${room.secretWord})`;
-                isLiarFound = true;
-            } else {
-                // Liar wins if civilian is voted out, or if only one civilian is left
-                const liars = room.players.filter(p => p.role === 'LIAR');
-                const civilians = room.players.filter(p => p.role === 'CIVILIAN');
-
-                message = `❌ RẤT TIẾC! ${votedOutPlayerName} là DÂN THƯỜNG. Kẻ nói dối đã chiến thắng! (Từ bí mật: ${room.secretWord})`;
-            }
-            
-            // Kết thúc game
-            const endGame = async () => {
-                const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
-                await updateDoc(roomRef, {
-                    status: 'FINISHED',
-                    winnerMessage: message,
-                });
             };
-            endGame();
-        }
 
-    }, [room, db]);
-    
-    // Component hiển thị thông tin vai trò/từ của người chơi
-    const RoleCard = ({ player }) => {
-        if (!player) return null;
-        
-        const isLiar = player.role === 'LIAR';
-        
-        let roleText = '';
-        let wordText = '';
-        let colorClass = '';
 
-        if (room.status === 'LOBBY') {
-            roleText = 'Đang chờ Host bắt đầu...';
-            wordText = '???';
-            colorClass = 'bg-gray-700';
-        } else if (room.status === 'IN_GAME') {
-            roleText = isLiar ? 'KẺ NÓI DỐI' : 'DÂN THƯỜNG';
-            wordText = isLiar ? 'Không có từ bí mật!' : room.secretWord;
-            colorClass = isLiar ? 'bg-red-600' : 'bg-green-600';
-        } else {
-             return (
-                <div className="p-4 bg-gray-200 text-gray-800 rounded-xl shadow-lg mt-6">
-                    <p className="font-bold">Trạng thái game: ĐÃ KẾT THÚC</p>
-                </div>
-            );
-        }
+            // --- 5. Logic Chuyển Lượt Mô tả ---
+            const handleNextTurn = async () => {
+                if (!db || !room || room.status !== 'IN_GAME') return;
+                
+                const nextIndex = (room.currentPlayerIndex + 1) % room.players.length;
+                const nextPlayerName = room.players[nextIndex].name;
+                
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
+                    await updateDoc(roomRef, {
+                        currentPlayerIndex: nextIndex,
+                        currentTurn: nextPlayerName,
+                    });
+                } catch (e) {
+                    console.error("Lỗi chuyển lượt:", e);
+                    setError("Không thể chuyển lượt.");
+                }
+            };
 
-        return (
-            <div className={`p-6 ${colorClass} text-white rounded-xl shadow-2xl transition duration-300`}>
-                <h3 className="text-xl font-extrabold mb-2 uppercase tracking-wider">
-                    Bạn là: <span className="text-yellow-200">{roleText}</span>
-                </h3>
-                <div className="border-t border-white/30 pt-4 mt-4">
-                    <p className="text-sm font-light">Từ Bí Mật:</p>
-                    <p className="text-3xl font-black">{wordText}</p>
-                </div>
-                {isLiar && (
-                    <p className="text-xs mt-2 italic text-white/80">Nhiệm vụ: Tìm ra từ bí mật và tránh bị nghi ngờ.</p>
-                )}
-            </div>
-        );
-    };
+            // --- 6. Logic Bỏ phiếu / Kết thúc game ---
 
-    // --- Giao diện các màn hình ---
-    
-    // Màn hình 1: Nhập tên và Chọn phòng
-    if (!roomCode || !room) {
-        return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-                <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-2xl">
-                    <h1 className="text-3xl font-black text-gray-800 mb-6 text-center">AI LÀ NGƯỜI NÓI DỐI?</h1>
+            const callForVote = () => {
+                setIsVoting(true);
+                setVotingError('');
+                setVotedPlayerName(null);
+            };
+
+            const handleVote = async (votedPlayerName) => {
+                if (!db || !room || room.status !== 'IN_GAME' || isVoting === false || !votedPlayerName) return;
+                if (room.votes[playerSelf.name]) {
+                    setVotingError("Bạn đã bỏ phiếu rồi.");
+                    return;
+                }
+
+                setVotedPlayerName(votedPlayerName);
+                setLoading(true);
+
+                try {
+                    const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
+                    const newVotes = { ...room.votes, [playerSelf.name]: votedPlayerName };
+
+                    await updateDoc(roomRef, {
+                        votes: newVotes
+                    });
                     
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
-                    )}
-                    
-                    <div className="mb-6">
-                        <label htmlFor="playerName" className="block text-sm font-medium text-gray-700 mb-2">Tên của bạn</label>
-                        <input
-                            id="playerName"
-                            type="text"
-                            value={playerName}
-                            onChange={(e) => setPlayerName(e.target.value)}
-                            placeholder="Nhập tên người chơi (vd: Minh, An,..."
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                            maxLength={20}
-                            disabled={loading || !isAuthReady}
-                        />
-                    </div>
+                    setIsVoting(false);
+                    setLoading(false);
 
-                    <div className="space-y-4">
-                        <button
-                            onClick={createRoom}
-                            disabled={!playerName || loading || !isAuthReady}
-                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
-                        >
-                            {loading && <span className="animate-spin mr-2">🌀</span>}
-                            Tạo Phòng Chơi Mới
-                        </button>
-                        
-                        <div className="flex items-center space-x-2">
-                            <input
-                                type="text"
-                                value={roomCode.toUpperCase()}
-                                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                                placeholder="Mã phòng (4 chữ số)"
-                                className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 uppercase"
-                                maxLength={4}
-                                disabled={loading || !isAuthReady}
-                            />
-                            <button
-                                onClick={joinRoom}
-                                disabled={!playerName || roomCode.length !== 4 || loading || !isAuthReady}
-                                className="w-1/3 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
-                            >
-                                {loading ? 'Đang vào...' : 'Vào Phòng'}
-                            </button>
+                } catch (e) {
+                    console.error("Lỗi bỏ phiếu:", e);
+                    setVotingError("Lỗi khi bỏ phiếu.");
+                    setLoading(false);
+                }
+            };
+            
+            // Tally votes and determine winner
+            useEffect(() => {
+                if (!room || room.status !== 'IN_GAME') return;
+                
+                const playersInGame = room.players.filter(p => p.role !== 'PENDING');
+                const totalPlayers = playersInGame.length;
+                const totalVotes = Object.keys(room.votes).length;
+
+                // Game kết thúc khi tất cả người chơi (Dân thường + Nói dối) đã bỏ phiếu.
+                if (totalVotes === totalPlayers) {
+                    const voteTally = {};
+                    for (const name in room.votes) {
+                        voteTally[room.votes[name]] = (voteTally[room.votes[name]] || 0) + 1;
+                    }
+                    
+                    // Tìm người bị bầu nhiều nhất
+                    let maxVotes = 0;
+                    let votedOutPlayerName = null;
+                    
+                    for (const name in voteTally) {
+                        if (voteTally[name] > maxVotes) {
+                            maxVotes = voteTally[name];
+                            votedOutPlayerName = name;
+                        }
+                    }
+
+                    if (!votedOutPlayerName) return;
+
+                    const votedOutPlayer = room.players.find(p => p.name === votedOutPlayerName);
+
+                    let message = '';
+                    let liarFound = false;
+
+                    if (votedOutPlayer.role === 'LIAR') {
+                        liarFound = true;
+                        message = `🎉 CHÚC MỪNG! Người bị loại là ${votedOutPlayerName}. Anh ta CHÍNH XÁC là KẺ NÓI DỐI! Phe Dân Thường THẮNG!`;
+                    } else {
+                        message = `❌ RẤT TIẾC! Người bị loại là ${votedOutPlayerName} - DÂN THƯỜNG! Kẻ nói dối đã chiến thắng!`;
+                    }
+                    
+                    message += ` (Từ bí mật: ${room.secretWord})`;
+                    
+                    // Kết thúc game
+                    const endGame = async () => {
+                        const roomRef = doc(db, `artifacts/${appId}/public/data/liar_rooms`, room.roomId);
+                        await updateDoc(roomRef, {
+                            status: 'FINISHED',
+                            winnerMessage: message,
+                        });
+                    };
+                    endGame();
+                }
+
+            }, [room, db, winnerMessage]);
+            
+            // Component hiển thị thông tin vai trò/từ của người chơi
+            const RoleCard = ({ player }) => {
+                if (!player) return null;
+                
+                const isLiar = player.role === 'LIAR';
+                
+                let roleText = '';
+                let wordText = '';
+                let colorClass = '';
+
+                if (room.status === 'LOBBY') {
+                    roleText = 'Đang chờ Host bắt đầu...';
+                    wordText = '???';
+                    colorClass = 'bg-gray-700';
+                } else if (room.status === 'IN_GAME') {
+                    roleText = isLiar ? 'KẺ NÓI DỐI' : 'DÂN THƯỜNG';
+                    wordText = isLiar ? 'Không có từ bí mật!' : room.secretWord;
+                    colorClass = isLiar ? 'bg-red-600' : 'bg-green-600';
+                } else {
+                     return (
+                        <div className="p-4 bg-gray-200 text-gray-800 rounded-xl shadow-lg mt-6">
+                            <p className="font-bold">Trạng thái game: ĐÃ KẾT THÚC</p>
                         </div>
-                    </div>
-                    
-                    <p className="text-xs text-gray-500 mt-6 text-center">
-                        ID Người dùng của bạn: {userId || 'Đang tải...'}
-                    </p>
-                </div>
-            </div>
-        );
-    }
-    
-    // Màn hình 2: Phòng chờ (Lobby)
-    if (room.status === 'LOBBY') {
-        const isHost = playerSelf?.isHost;
-        const currentPlayers = room.players.length;
+                    );
+                }
 
-        // Cập nhật giới hạn chơi dựa trên số người hiện tại (max 15)
-        const maxLimit = Math.min(MAX_PLAYERS, currentPlayers + 10); // Cho phép tăng nhưng giới hạn 15
-        
-        return (
-            <div className="min-h-screen bg-gray-900 p-4 flex flex-col items-center">
-                <div className="w-full max-w-xl bg-white p-6 rounded-2xl shadow-2xl mt-8">
-                    <h1 className="text-3xl font-black text-gray-800 mb-4 text-center">Phòng Chơi: {room.roomId}</h1>
-                    <p className="text-sm text-gray-500 text-center mb-6">Mã phòng: <span className="font-bold text-indigo-600 text-lg">{room.roomId}</span> (Chia sẻ cho bạn bè)</p>
-
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
-                    )}
-
-                    <div className="mb-6">
-                        <h2 className="text-xl font-semibold mb-2 text-gray-700">Người Chơi ({currentPlayers}/{MAX_PLAYERS})</h2>
-                        <ul className="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-lg border">
-                            {room.players.map(p => (
-                                <li key={p.id} className={`flex justify-between items-center p-2 rounded-md ${p.isHost ? 'bg-yellow-100 font-bold' : 'bg-white'}`}>
-                                    <span>{p.name}</span>
-                                    <span className="text-xs text-gray-500">{p.isHost ? 'Host' : 'Thành viên'}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    {isHost ? (
-                        <div className="space-y-4 border-t pt-4">
-                            <h2 className="text-xl font-semibold text-gray-700">Cài đặt Game</h2>
-                            
-                            <div className="flex space-x-4">
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700">Số Dân Thường (min {totalPlayerLimit - liarCount})</label>
-                                    <select
-                                        value={totalPlayerLimit}
-                                        onChange={(e) => {
-                                            const newLimit = parseInt(e.target.value);
-                                            setTotalPlayerLimit(newLimit);
-                                            // Đảm bảo liar count hợp lệ
-                                            if (liarCount >= newLimit) setLiarCount(newLimit - 1);
-                                        }}
-                                        className="w-full p-3 border border-gray-300 rounded-lg"
-                                        disabled={loading}
-                                    >
-                                        {Array.from({ length: MAX_PLAYERS - 2 }, (_, i) => i + 3).map(n => (
-                                            <option key={n} value={n}>{n} người</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700">Số Kẻ Nói Dối (max {totalPlayerLimit - 1})</label>
-                                    <select
-                                        value={liarCount}
-                                        onChange={(e) => setLiarCount(parseInt(e.target.value))}
-                                        className="w-full p-3 border border-gray-300 rounded-lg"
-                                        disabled={loading}
-                                    >
-                                        {Array.from({ length: totalPlayerLimit - 1 }, (_, i) => i + 1).map(n => (
-                                            <option key={n} value={n}>{n} người</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <button
-                                onClick={handleStartGame}
-                                disabled={currentPlayers < totalPlayerLimit || loading}
-                                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-200 disabled:opacity-50"
-                            >
-                                BẮT ĐẦU GAME (Cần {totalPlayerLimit} người)
-                            </button>
+                return (
+                    <div className={`p-6 ${colorClass} text-white rounded-xl shadow-2xl transition duration-300`}>
+                        <h3 className="text-xl font-extrabold mb-2 uppercase tracking-wider">
+                            Bạn là: <span className="text-yellow-200">{roleText}</span>
+                        </h3>
+                        <div className="border-t border-white/30 pt-4 mt-4">
+                            <p className="text-sm font-light">Từ Bí Mật:</p>
+                            <p className="text-3xl font-black">{wordText}</p>
                         </div>
-                    ) : (
-                        <p className="text-center text-lg font-medium text-indigo-600 mt-4 p-4 border rounded-lg bg-indigo-50">
-                            Chờ Host ({room.players.find(p => p.isHost)?.name}) bắt đầu game...
-                        </p>
-                    )}
-                    
-                    <button
-                        onClick={leaveRoom}
-                        className="w-full mt-4 text-sm text-red-500 hover:text-red-700 py-2 rounded-lg border border-red-200 hover:bg-red-50 transition duration-200"
-                    >
-                        {isHost ? 'Hủy Phòng và Rời Khỏi' : 'Rời Phòng'}
-                    </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-4">ID Người dùng của bạn: {userId}</p>
-            </div>
-        );
-    }
-    
-    // Màn hình 3: Trong Game (IN_GAME)
-    if (room.status === 'IN_GAME') {
-        const isCurrentTurn = room.currentTurn === playerSelf?.name;
-        const totalPlayers = room.players.length;
-        const isHost = playerSelf?.isHost;
-
-        return (
-            <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center">
-                <div className="w-full max-w-xl bg-white p-6 rounded-2xl shadow-2xl mt-4">
-                    <div className="flex justify-between items-center mb-4 border-b pb-3">
-                        <h1 className="text-2xl font-black text-gray-800">Phòng: {room.roomId}</h1>
-                        <button
-                            onClick={callForVote}
-                            className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200"
-                        >
-                            Gọi Bỏ Phiếu!
-                        </button>
-                    </div>
-
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
-                    )}
-                    
-                    {/* Hiển thị vai trò và từ bí mật của riêng người chơi này */}
-                    <RoleCard player={playerSelf} />
-
-                    <div className="mt-6">
-                        <h2 className="text-xl font-semibold mb-3 text-gray-700">Lượt Mô Tả</h2>
-                        <ul className="flex flex-wrap gap-2 justify-center p-3 border rounded-lg bg-gray-50">
-                            {room.players.map((p, index) => {
-                                const isTurn = p.name === room.currentTurn;
-                                return (
-                                    <li 
-                                        key={p.id} 
-                                        className={`px-3 py-1 rounded-full text-sm font-medium transition duration-300 shadow-sm
-                                            ${isTurn 
-                                                ? 'bg-indigo-600 text-white animate-pulse-turn'
-                                                : p.role === 'LIAR' ? 'bg-gray-200 text-gray-700' : 'bg-blue-100 text-blue-800'
-                                            }
-                                        `}
-                                    >
-                                        {p.name} {p.isHost && '👑'}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-
-                        {isCurrentTurn && (
-                            <button
-                                onClick={handleNextTurn}
-                                className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-4 rounded-lg shadow-lg transition duration-200"
-                            >
-                                {`Đã mô tả xong. Chuyển lượt (Tới ${room.players[(room.currentPlayerIndex + 1) % totalPlayers].name})`}
-                            </button>
+                        {isLiar && (
+                            <p className="text-xs mt-2 italic text-white/80">Nhiệm vụ: Tìm ra từ bí mật (dựa trên mô tả của Dân thường) và tránh bị nghi ngờ.</p>
                         )}
-                        {!isCurrentTurn && (
-                            <p className="text-center mt-4 text-gray-600 italic">
-                                Chờ **{room.currentTurn}** mô tả...
-                            </p>
+                        {!isLiar && (
+                            <p className="text-xs mt-2 italic text-white/80">Nhiệm vụ: Mô tả từ bí mật sao cho Kẻ nói dối không nhận ra, nhưng Dân thường khác hiểu.</p>
                         )}
                     </div>
-                </div>
+                );
+            };
 
-                {/* Voting Modal */}
-                {isVoting && (
-                    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white p-8 rounded-xl w-full max-w-md shadow-2xl">
-                            <h2 className="text-2xl font-bold mb-4 text-gray-800 text-center">Bỏ Phiếu: Ai là Kẻ Nói Dối?</h2>
-                            {votingError && (
-                                <p className="text-red-500 text-sm mb-3">{votingError}</p>
+            // --- Giao diện các màn hình ---
+            
+            // Màn hình 1: Nhập tên và Chọn phòng
+            if (!roomCode || !room) {
+                return (
+                    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+                        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-2xl">
+                            <h1 className="text-3xl font-black text-gray-800 mb-6 text-center">AI LÀ NGƯỜI NÓI DỐI?</h1>
+                            
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
                             )}
                             
-                            <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2">
-                                {room.players.map(p => (
+                            <div className="mb-6">
+                                <label htmlFor="playerName" className="block text-sm font-medium text-gray-700 mb-2">Tên của bạn</label>
+                                <input
+                                    id="playerName"
+                                    type="text"
+                                    value={playerName}
+                                    onChange={(e) => setPlayerName(e.target.value)}
+                                    placeholder="Nhập tên người chơi (vd: Minh, An,..."
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                    maxLength={20}
+                                    disabled={loading || !isAuthReady}
+                                />
+                            </div>
+
+                            <div className="space-y-4">
+                                <button
+                                    onClick={createRoom}
+                                    disabled={!playerName || loading || !isAuthReady}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
+                                >
+                                    {loading && <span className="animate-spin mr-2">🌀</span>}
+                                    Tạo Phòng Chơi Mới
+                                </button>
+                                
+                                <div className="flex items-center space-x-2">
+                                    <input
+                                        type="text"
+                                        value={roomCode.toUpperCase()}
+                                        onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                                        placeholder="Mã phòng (4 chữ số)"
+                                        className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 uppercase"
+                                        maxLength={4}
+                                        disabled={loading || !isAuthReady}
+                                    />
                                     <button
-                                        key={p.id}
-                                        onClick={() => handleVote(p.name)}
-                                        disabled={loading || p.id === userId}
-                                        className={`p-3 rounded-lg font-semibold transition duration-150 shadow-md ${
-                                            votedPlayerName === p.name ? 'bg-indigo-500 text-white' : 'bg-gray-200 hover:bg-indigo-100 text-gray-800'
-                                        } disabled:opacity-50`}
+                                        onClick={joinRoom}
+                                        disabled={!playerName || roomCode.length !== 4 || loading || !isAuthReady}
+                                        className="w-1/3 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200 disabled:opacity-50"
                                     >
-                                        {p.name}
+                                        {loading ? 'Đang vào...' : 'Vào Phòng'}
                                     </button>
-                                ))}
+                                </div>
                             </div>
                             
-                            <p className="text-sm text-gray-500 mt-4 text-center">Bạn đang bỏ phiếu cho: <span className="font-bold">{votedPlayerName || 'Chưa chọn'}</span></p>
+                            <p className="text-xs text-gray-500 mt-6 text-center">
+                                ID Người dùng của bạn: {userId || 'Đang tải...'}
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Màn hình 2: Phòng chờ (Lobby)
+            if (room.status === 'LOBBY') {
+                const isHost = playerSelf?.isHost;
+                const currentPlayers = room.players.length;
+
+                return (
+                    <div className="min-h-screen bg-gray-900 p-4 flex flex-col items-center">
+                        <div className="w-full max-w-xl bg-white p-6 rounded-2xl shadow-2xl mt-8">
+                            <h1 className="text-3xl font-black text-gray-800 mb-4 text-center">Phòng Chơi: {room.roomId}</h1>
+                            <p className="text-sm text-gray-500 text-center mb-6">Mã phòng: <span className="font-bold text-indigo-600 text-lg">{room.roomId}</span> (Chia sẻ cho bạn bè)</p>
+
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
+                            )}
+
+                            <div className="mb-6">
+                                <h2 className="text-xl font-semibold mb-2 text-gray-700">Người Chơi ({currentPlayers}/{MAX_PLAYERS})</h2>
+                                <ul className="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-lg border">
+                                    {room.players.map(p => (
+                                        <li key={p.id} className={`flex justify-between items-center p-2 rounded-md ${p.isHost ? 'bg-yellow-100 font-bold' : 'bg-white'}`}>
+                                            <span>{p.name}</span>
+                                            <span className="text-xs text-gray-500">{p.isHost ? 'Host' : 'Thành viên'}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {isHost ? (
+                                <div className="space-y-4 border-t pt-4">
+                                    <h2 className="text-xl font-semibold text-gray-700">Cài đặt Game</h2>
+                                    
+                                    <div className="flex space-x-4">
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-medium text-gray-700">Tổng số Người Chơi (3 - {MAX_PLAYERS})</label>
+                                            <select
+                                                value={totalPlayerLimit}
+                                                onChange={(e) => {
+                                                    const newLimit = parseInt(e.target.value);
+                                                    setTotalPlayerLimit(newLimit);
+                                                    // Đảm bảo liar count hợp lệ
+                                                    if (liarCount >= newLimit) setLiarCount(newLimit - 1);
+                                                }}
+                                                className="w-full p-3 border border-gray-300 rounded-lg"
+                                                disabled={loading}
+                                            >
+                                                {Array.from({ length: MAX_PLAYERS - 2 }, (_, i) => i + 3).map(n => (
+                                                    <option key={n} value={n}>{n} người</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-medium text-gray-700">Số Kẻ Nói Dối (1 - {totalPlayerLimit - 1})</label>
+                                            <select
+                                                value={liarCount}
+                                                onChange={(e) => setLiarCount(parseInt(e.target.value))}
+                                                className="w-full p-3 border border-gray-300 rounded-lg"
+                                                disabled={loading}
+                                            >
+                                                {Array.from({ length: totalPlayerLimit - 1 }, (_, i) => i + 1).map(n => (
+                                                    <option key={n} value={n}>{n} người</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <button
+                                        onClick={handleStartGame}
+                                        disabled={currentPlayers < totalPlayerLimit || loading}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-200 disabled:opacity-50"
+                                    >
+                                        BẮT ĐẦU GAME (Cần {totalPlayerLimit} người)
+                                    </button>
+                                </div>
+                            ) : (
+                                <p className="text-center text-lg font-medium text-indigo-600 mt-4 p-4 border rounded-lg bg-indigo-50">
+                                    Chờ Host ({room.players.find(p => p.isHost)?.name}) bắt đầu game...
+                                </p>
+                            )}
                             
                             <button
-                                onClick={() => setIsVoting(false)}
-                                className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                                onClick={leaveRoom}
+                                className="w-full mt-4 text-sm text-red-500 hover:text-red-700 py-2 rounded-lg border border-red-200 hover:bg-red-50 transition duration-200"
                             >
-                                Hủy Bỏ
+                                {isHost ? 'Hủy Phòng và Rời Khỏi' : 'Rời Phòng'}
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-4">ID Người dùng của bạn: {userId}</p>
+                    </div>
+                );
+            }
+            
+            // Màn hình 3: Trong Game (IN_GAME)
+            if (room.status === 'IN_GAME') {
+                const isCurrentTurn = room.currentTurn === playerSelf?.name;
+                const totalPlayers = room.players.length;
+
+                return (
+                    <div className="min-h-screen bg-gray-100 p-4 flex flex-col items-center">
+                        <div className="w-full max-w-xl bg-white p-6 rounded-2xl shadow-2xl mt-4">
+                            <div className="flex justify-between items-center mb-4 border-b pb-3">
+                                <h1 className="text-2xl font-black text-gray-800">Phòng: {room.roomId}</h1>
+                                <button
+                                    onClick={callForVote}
+                                    className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200"
+                                >
+                                    Gọi Bỏ Phiếu!
+                                </button>
+                            </div>
+
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>
+                            )}
+                            
+                            {/* Hiển thị vai trò và từ bí mật của riêng người chơi này */}
+                            <RoleCard player={playerSelf} />
+
+                            <div className="mt-6">
+                                <h2 className="text-xl font-semibold mb-3 text-gray-700">Lượt Mô Tả (Thứ tự luân phiên)</h2>
+                                <ul className="flex flex-wrap gap-2 justify-center p-3 border rounded-lg bg-gray-50">
+                                    {room.players.map((p) => {
+                                        const isTurn = p.name === room.currentTurn;
+                                        return (
+                                            <li 
+                                                key={p.id} 
+                                                className={`px-3 py-1 rounded-full text-sm font-medium transition duration-300 shadow-sm
+                                                    ${isTurn 
+                                                        ? 'bg-indigo-600 text-white animate-pulse-turn'
+                                                        : 'bg-blue-100 text-blue-800'
+                                                    }
+                                                `}
+                                            >
+                                                {p.name} {p.isHost && '👑'}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+
+                                {isCurrentTurn && (
+                                    <button
+                                        onClick={handleNextTurn}
+                                        className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-4 rounded-lg shadow-lg transition duration-200"
+                                    >
+                                        {`Đã mô tả xong. Chuyển lượt (Tới ${room.players[(room.currentPlayerIndex + 1) % totalPlayers].name})`}
+                                    </button>
+                                )}
+                                {!isCurrentTurn && (
+                                    <p className="text-center mt-4 text-gray-600 italic">
+                                        Chờ **{room.currentTurn}** mô tả...
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Voting Modal */}
+                        {isVoting && (
+                            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
+                                <div className="bg-white p-8 rounded-xl w-full max-w-md shadow-2xl">
+                                    <h2 className="text-2xl font-bold mb-4 text-gray-800 text-center">Bỏ Phiếu: Ai là Kẻ Nói Dối?</h2>
+                                    {votingError && (
+                                        <p className="text-red-500 text-sm mb-3">{votingError}</p>
+                                    )}
+                                    
+                                    <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2">
+                                        {room.players.map(p => (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => handleVote(p.name)}
+                                                disabled={loading || p.id === userId}
+                                                className={`p-3 rounded-lg font-semibold transition duration-150 shadow-md ${
+                                                    votedPlayerName === p.name ? 'bg-indigo-500 text-white' : 'bg-gray-200 hover:bg-indigo-100 text-gray-800'
+                                                } disabled:opacity-50`}
+                                            >
+                                                {p.name} {p.id === userId ? '(Bạn)' : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    
+                                    <p className="text-sm text-gray-500 mt-4 text-center">Bạn đang bỏ phiếu cho: <span className="font-bold">{votedPlayerName || 'Chưa chọn'}</span></p>
+                                    
+                                    <button
+                                        onClick={() => setIsVoting(false)}
+                                        className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                                    >
+                                        Hủy Bỏ
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Voting Results/Progress */}
+                        <div className="w-full max-w-xl p-6 rounded-2xl shadow-lg mt-4 bg-blue-50 border border-blue-200">
+                            <h3 className="text-lg font-bold text-blue-800 mb-2">Tiến trình Bỏ phiếu:</h3>
+                            <p className="text-sm text-blue-700">Đã bỏ phiếu: {Object.keys(room.votes).length} / {totalPlayers}</p>
+                            <div className="mt-2 h-2 bg-blue-200 rounded-full overflow-hidden">
+                                <div 
+                                    className="h-full bg-blue-600 transition-all duration-500" 
+                                    style={{ width: `${(Object.keys(room.votes).length / totalPlayers) * 100}%` }}
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Màn hình 4: Kết thúc Game (FINISHED)
+            if (room.status === 'FINISHED') {
+                return (
+                    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+                        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-2xl text-center">
+                            <h1 className="text-4xl font-black text-indigo-600 mb-6">GAME ĐÃ KẾT THÚC</h1>
+                            
+                            <div className="p-4 bg-yellow-100 border border-yellow-300 rounded-xl mb-6">
+                                <p className="text-lg font-bold text-gray-800 whitespace-pre-wrap">{room.winnerMessage}</p>
+                            </div>
+                            
+                            <h2 className="text-xl font-semibold mb-3 text-gray-700">Các Vai Trò:</h2>
+                            <ul className="space-y-2 mb-8 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-lg border">
+                                {room.players.map(p => (
+                                    <li key={p.id} className={`p-2 rounded-md flex justify-between ${p.role === 'LIAR' ? 'bg-red-100 font-bold' : 'bg-green-100'}`}>
+                                        <span>{p.name}</span>
+                                        <span>{p.role === 'LIAR' ? 'KẺ NÓI DỐI 😈' : 'DÂN THƯỜNG ✅'}</span>
+                                    </li>
+                                ))}
+                            </ul>
+
+                            <button
+                                onClick={leaveRoom}
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200"
+                            >
+                                Trở về Màn hình chính
                             </button>
                         </div>
                     </div>
-                )}
-                
-                {/* Voting Results/Progress */}
-                <div className="w-full max-w-xl p-6 rounded-2xl shadow-lg mt-4 bg-blue-50 border border-blue-200">
-                    <h3 className="text-lg font-bold text-blue-800 mb-2">Tiến trình Bỏ phiếu:</h3>
-                    <p className="text-sm text-blue-700">Đã bỏ phiếu: {Object.keys(room.votes).length} / {totalPlayers}</p>
-                    <div className="mt-2 h-2 bg-blue-200 rounded-full overflow-hidden">
-                        <div 
-                            className="h-full bg-blue-600 transition-all duration-500" 
-                            style={{ width: `${(Object.keys(room.votes).length / totalPlayers) * 100}%` }}
-                        ></div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-    
-    // Màn hình 4: Kết thúc Game (FINISHED)
-    if (room.status === 'FINISHED') {
-        return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-                <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-2xl text-center">
-                    <h1 className="text-4xl font-black text-indigo-600 mb-6">GAME ĐÃ KẾT THÚC</h1>
-                    
-                    <div className="p-4 bg-yellow-100 border border-yellow-300 rounded-xl mb-6">
-                        <p className="text-lg font-bold text-gray-800 whitespace-pre-wrap">{room.winnerMessage}</p>
-                    </div>
-                    
-                    <h2 className="text-xl font-semibold mb-3 text-gray-700">Các Vai Trò:</h2>
-                    <ul className="space-y-2 mb-8 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-lg border">
-                        {room.players.map(p => (
-                            <li key={p.id} className={`p-2 rounded-md flex justify-between ${p.role === 'LIAR' ? 'bg-red-100 font-bold' : 'bg-green-100'}`}>
-                                <span>{p.name}</span>
-                                <span>{p.role === 'LIAR' ? 'KẺ NÓI DỐI 😈' : 'DÂN THƯỜNG ✅'}</span>
-                            </li>
-                        ))}
-                    </ul>
+                );
+            }
+        };
 
-                    <button
-                        onClick={leaveRoom}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-200"
-                    >
-                        Trở về Màn hình chính
-                    </button>
-                </div>
-            </div>
-        );
-    }
-};
+        // Lệnh mount component React vào DOM
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
 
-// CSS cho hiệu ứng nhấp nháy
-const style = `
-@keyframes pulse-turn {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(1.05); }
-}
-
-.animate-pulse-turn {
-    animation: pulse-turn 1.5s infinite;
-}
-`;
-
-// Tailwind configuration (using Inter font)
-const script = `
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-    body { font-family: 'Inter', sans-serif; }
-    ${style}
-</style>
-`;
-
-export default App;
-// Thêm thẻ script Tailwind CSS vào đầu file (chỉ hiển thị dưới dạng comment vì đây là file JSX)
-// ${script}
+    </script>
+</body>
+</html>
