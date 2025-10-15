@@ -205,7 +205,7 @@
                 <select id="accused-player" class="input-style flex-grow">
                     <!-- Danh sách người chơi để bỏ phiếu -->
                 </select>
-                <button onclick="endGame()" id="end-game-btn" class="btn-primary flex-shrink-0 bg-blue-600 hover:bg-blue-700">KẾT THÚC & BỎ PHIẾU</button>
+                <button onclick="endGame()" id="end-game-btn" class="btn-primary flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:opacity-50" disabled>KẾT THÚC & BỎ PHIẾU</button>
             </div>
         </div>
     </div>
@@ -346,7 +346,7 @@
                 </div>
             `;
             // Cập nhật cấu trúc players tạm thời
-            players.push({ id: i, name: name, role: 'Unknown', word: '' });
+            players.push({ id: i, name: name, role: 'Unknown', word: '', uid: `local-${i}` }); // Dùng local-id
         }
     }
 
@@ -415,6 +415,7 @@
         const accusedSelect = document.getElementById('accused-player');
         const playerButtonsList = document.getElementById('player-buttons-list');
         const nextSpeakerBtn = document.getElementById('next-speaker-btn');
+        const endGameBtn = document.getElementById('end-game-btn');
         
         playerButtonsList.innerHTML = '';
         accusedSelect.innerHTML = '<option value="" disabled selected>Chọn người bị tình nghi</option>';
@@ -458,15 +459,18 @@
             }
         });
 
-        // 3. Quản lý nút "Chuyển Lượt"
-        if (currentSpeakerIndex >= players.length) {
+        // 3. Quản lý nút "Chuyển Lượt" và "Bỏ Phiếu"
+        const isFinished = currentSpeakerIndex >= players.length;
+
+        nextSpeakerBtn.disabled = isFinished;
+        endGameBtn.disabled = !isFinished; // Chỉ kích hoạt Bỏ phiếu khi đã xong
+        
+        if (isFinished) {
             nextSpeakerBtn.textContent = "ĐÃ HOÀN TẤT MÔ TẢ";
-            nextSpeakerBtn.disabled = true;
             nextSpeakerBtn.classList.remove('bg-indigo-500');
             nextSpeakerBtn.classList.add('bg-gray-400');
         } else {
              nextSpeakerBtn.textContent = "CHUYỂN LƯỢT MÔ TẢ";
-             nextSpeakerBtn.disabled = false;
              nextSpeakerBtn.classList.add('bg-indigo-500');
              nextSpeakerBtn.classList.remove('bg-gray-400');
         }
