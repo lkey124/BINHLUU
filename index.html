@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ai Là Người Nói Dối - Liar Game</title>
+    <title>Ai Là Người Nói Dối - Liar Game (Cục Bộ)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -34,12 +34,12 @@
     <div id="game-container" class="w-full max-w-4xl bg-white shadow-2xl rounded-xl p-6 sm:p-10 border-t-8 border-indigo-600">
         <h1 class="text-4xl font-extrabold text-gray-900 text-center mb-6 flex items-center justify-center">
             <i data-lucide="scan-eye" class="w-8 h-8 mr-3 text-indigo-600"></i>
-            Ai Là Người Nói Dối
+            Ai Là Người Nói Dối (Chơi Cục Bộ)
         </h1>
-        <p id="room-info" class="text-center text-gray-500 mb-6"></p>
+        <p id="room-info" class="text-center text-gray-500 mb-6">Trò chơi được quản lý trên một trình duyệt duy nhất.</p>
 
         <!-- Loading & Error Message -->
-        <div id="loading" class="text-center text-indigo-600 font-medium my-8">Đang tải...</div>
+        <div id="loading" class="text-center text-indigo-600 font-medium my-8 hidden"></div>
         <div id="message-box" class="hidden text-center p-3 my-4 rounded-lg font-medium"></div>
 
         <!-- 1. Setup Screen -->
@@ -70,14 +70,26 @@
 
         <!-- 2. Role/Word Reveal Screen (First Reveal after Start) -->
         <div id="reveal-screen" class="hidden text-center p-8 bg-indigo-50 rounded-lg border-2 border-indigo-300 space-y-4">
-            <h2 class="text-3xl font-extrabold text-indigo-800">Thẻ Bí Mật Của Bạn</h2>
-            <p id="your-role" class="text-2xl font-bold p-2 rounded-md inline-block"></p>
-            <p class="text-lg text-gray-600">Từ khóa bí mật vòng này là:</p>
-            <p id="secret-word" class="text-4xl font-extrabold text-gray-900 bg-white p-4 rounded-xl shadow-md border-b-4 border-yellow-500 inline-block"></p>
-            <p id="liar-goal" class="text-sm italic text-red-500"></p>
+            <h2 class="text-3xl font-extrabold text-indigo-800">Thông báo cho Người Chơi</h2>
+            <p class="text-lg text-gray-600">Hãy đưa thiết bị cho **Người chơi đầu tiên** xem thẻ của mình.</p>
+            <p id="current-player-name-reveal" class="text-4xl font-extrabold text-gray-900 bg-yellow-100 p-4 rounded-xl shadow-md inline-block">Tên Người Chơi</p>
             
-            <button onclick="hideRevealScreen()" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
-                Đã xem - Bắt đầu miêu tả
+            <button onclick="showNextReveal()" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                Hiện Thẻ Bài
+            </button>
+        </div>
+
+        <!-- 2b. Actual Player Card View (Hidden by default, shown when 'showNextReveal' is clicked) -->
+        <div id="player-card-view" class="hidden text-center p-8 bg-indigo-100 rounded-lg border-2 border-indigo-500 space-y-4">
+            <h3 class="text-2xl font-extrabold text-indigo-800">Thẻ Bài Bí Mật Của Bạn</h3>
+            <p id="reveal-player-name" class="text-lg font-semibold text-gray-700"></p>
+            <p id="reveal-your-role" class="text-2xl font-bold p-2 rounded-md inline-block"></p>
+            <p class="text-lg text-gray-600">Từ khóa bí mật vòng này là:</p>
+            <p id="reveal-secret-word" class="text-4xl font-extrabold text-gray-900 bg-white p-4 rounded-xl shadow-md border-b-4 border-yellow-500 inline-block"></p>
+            <p id="reveal-liar-goal" class="text-sm italic text-red-500"></p>
+            
+            <button onclick="hidePlayerCardView()" class="w-full mt-6 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                Đã xem (Đưa cho Người kế tiếp)
             </button>
         </div>
 
@@ -98,7 +110,8 @@
                 <p id="turn-order-info" class="text-sm text-gray-600 mt-2"></p>
             </div>
 
-            <button id="next-turn-btn" onclick="nextTurn()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-lg" disabled>
+            <!-- In local mode, we don't need user ID check, just rely on host clicking next -->
+            <button id="next-turn-btn" onclick="nextTurn()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-lg">
                 Hoàn Thành Miêu Tả (Chuyển Lượt)
             </button>
         </div>
@@ -106,14 +119,14 @@
         <!-- 4. Voting Screen -->
         <div id="voting-screen" class="hidden text-center">
             <h2 class="text-3xl font-extrabold text-red-700 mb-6">BỎ PHIẾU TÌM KẺ NÓI DỐI</h2>
-            <p class="text-xl text-gray-700 mb-8">Hãy chọn người mà bạn nghi ngờ là Liar:</p>
+            <p class="text-xl text-gray-700 mb-8">Hãy chọn người mà cả nhóm nghi ngờ là Liar:</p>
 
             <div id="voting-options" class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
                 <!-- Voting buttons will be injected here -->
             </div>
 
-            <button id="submit-vote-btn" onclick="submitVote()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-lg" disabled>
-                Gửi Phiếu Bầu
+            <button id="submit-vote-btn" onclick="submitVote()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-lg">
+                Xác Nhận Người Bị Loại
             </button>
         </div>
 
@@ -130,46 +143,29 @@
 
     </div>
     
-    <!-- Player Card Modal (New Feature) -->
+    <!-- Player Card Modal (Click on any player's card to reveal role locally) -->
     <div id="player-card-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center p-4 z-50 transition-opacity duration-300">
         <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm text-center space-y-4 transform scale-100 transition-transform duration-300">
-            <h2 class="text-3xl font-extrabold text-indigo-800">Thẻ Bài Của Bạn</h2>
+            <h2 class="text-3xl font-extrabold text-indigo-800">Thẻ Bài Của <span id="modal-player-name"></span></h2>
             <i data-lucide="info" class="w-8 h-8 mx-auto text-indigo-600"></i>
             <p id="modal-your-role" class="text-2xl font-bold p-2 rounded-md inline-block"></p>
             <p class="text-lg text-gray-600">Từ khóa bí mật vòng này là:</p>
             <p id="modal-secret-word" class="text-4xl font-extrabold text-gray-900 bg-yellow-100 p-4 rounded-xl shadow-inner border-b-4 border-yellow-500 inline-block"></p>
             <p id="modal-liar-goal" class="text-sm italic text-red-500"></p>
             
-            <button onclick="hidePlayerCard()" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+            <button onclick="hidePlayerCardModal()" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
                 Đóng
             </button>
         </div>
     </div>
 
 
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, query, runTransaction, getDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- GLOBAL VARIABLES (MANDATORY CANVAS CONTEXT) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-liar-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        let app;
-        let db;
-        let auth;
-        let userId = null;
-        let gameRef;
-        let unsubscribe = null;
-        let currentGame = null;
+    <script>
+        // --- GLOBAL STATE ---
+        let gameState = null;
+        let revealIndex = 0; // Tracks which player is currently viewing their card on the setup screen
 
-        // Ensure lucide icons are rendered
-        lucide.createIcons();
-
-        // Game Constants
+        // Game Constants (unchanged)
         const MAX_PLAYERS = 15;
         const WORD_LIST = {
             "Con vật (Animals)": ["Chó", "Mèo", "Hổ", "Voi", "Gấu", "Khỉ", "Cá heo", "Chim cánh cụt", "Cá mập", "Rắn", "Sóc", "Thỏ", "Cú", "Sư tử", "Ngựa vằn", "Hươu cao cổ", "Báo", "Gà", "Vịt", "Ngỗng", "Bò", "Dê", "Cừu", "Lợn", "Chuột", "Bướm", "Ong", "Kiến", "Muỗi", "Tôm", "Cua", "Mực", "Bạch tuộc", "Tê giác", "Hải cẩu", "Cá sấu", "Hà mã", "Kangaroo", "Koala", "Lạc đà", "Đà điểu", "Cá vàng", "Rồng Komodo", "Kỳ lân", "Rùa", "Thằn lằn", "Châu chấu", "Ve sầu", "Cá voi", "Đại bàng", "Gõ kiến", "Bồ câu", "Sếu", "Công", "Hải âu", "Thủy tức", "Sao biển", "Nhím", "Chồn", "Hải ly", "Linh cẩu", "Cáo", "Sói", "Rồng", "Phượng hoàng", "Tỳ hưu", "Rồng đất", "Lửng mật", "Rái cá", "Báo đốm", "Gấu trúc", "Tắc kè", "Cóc", "Ếch", "Gián", "Mối", "Rết", "Bọ cạp", "Cá chép", "Cá hồi", "Cá basa", "Lươn", "Trạch", "Tôm hùm", "Thỏ rừng", "Hổ mang", "Trăn", "Cà cuống", "Bọ hung", "Đom đóm", "Bướm đêm"],
@@ -189,10 +185,11 @@
         }
 
         function hideAllScreens() {
-            ['setup-screen', 'reveal-screen', 'gameplay-screen', 'voting-screen', 'result-screen'].forEach(id => {
+            ['setup-screen', 'reveal-screen', 'gameplay-screen', 'voting-screen', 'result-screen', 'player-card-view'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
             });
             document.getElementById('message-box').classList.add('hidden');
+            document.getElementById('player-card-modal').classList.add('hidden');
         }
 
         function shuffleArray(array) {
@@ -203,78 +200,21 @@
             return array;
         }
 
-        // --- FIREBASE INITIALIZATION & AUTH ---
-        async function initializeFirebase() {
-            try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    throw new Error("Firebase config is missing.");
-                }
-
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                gameRef = doc(db, "artifacts", appId, "public", "data", "liar-game", "main-room");
-
-                // setLogLevel('debug'); // Optional: for debugging
-
-                await setPersistence(auth, browserSessionPersistence);
-
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        document.getElementById('room-info').textContent = `Mã người dùng: ${userId}`;
-                        setupPlayerInputs(5); // Initial setup
-                        listenToGame();
-                        document.getElementById('loading').classList.add('hidden');
-                    } else {
-                        document.getElementById('loading').textContent = "Lỗi: Không thể xác thực người dùng.";
-                    }
-                });
-
-            } catch (e) {
-                console.error("Firebase init error:", e);
-                document.getElementById('loading').textContent = `Lỗi khởi tạo: ${e.message}`;
-            }
-        }
-
-        // --- GAME STATE LISTENER ---
-        function listenToGame() {
-            if (unsubscribe) {
-                unsubscribe();
-            }
-
-            unsubscribe = onSnapshot(gameRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    currentGame = docSnap.data();
-                    renderGame(currentGame);
-                } else {
-                    // Game does not exist, show setup screen
-                    currentGame = null;
-                    renderSetup(true);
-                }
-            }, (error) => {
-                console.error("Firestore snapshot error:", error);
-                showMessage("Lỗi kết nối thời gian thực. Vui lòng tải lại trang.", true);
-            });
-        }
-
-        // --- UI RENDERING ---
+        // --- CORE GAME FLOW & RENDERING ---
         
+        window.initializeGame = () => {
+            renderSetup(true);
+            lucide.createIcons();
+        }
+
         function renderSetup(isNewGame = false) {
             hideAllScreens();
             document.getElementById('setup-screen').classList.remove('hidden');
 
-            const savedPlayers = isNewGame ? [] : (currentGame?.players || []);
-            const numPlayers = savedPlayers.length > 0 ? savedPlayers.length : 5;
+            const numPlayers = gameState ? gameState.players.length : 5;
             document.getElementById('num-players').value = numPlayers;
 
-            setupPlayerInputs(numPlayers, savedPlayers);
+            setupPlayerInputs(numPlayers, gameState ? gameState.players : []);
         }
 
         function setupPlayerInputs(count, players = []) {
@@ -311,16 +251,7 @@
                 }
                 return;
             }
-
-            const currentPlayer = state.players.find(p => p.id === userId);
             
-            // Check if player is assigned to the current game, if not, show setup
-            if (!currentPlayer) {
-                document.getElementById('setup-screen').classList.remove('hidden');
-                showMessage("Bạn chưa tham gia phòng. Vui lòng điền tên và nhấn Bắt đầu Trò chơi.", true);
-                return;
-            }
-
             // 1. Render Gameplay Screen
             document.getElementById('gameplay-screen').classList.remove('hidden');
             renderPlayerList(state);
@@ -330,19 +261,11 @@
             // 2. Control flow
             switch (state.status) {
                 case 'REVEAL':
-                    // This is handled by a local function call in startGame(), no need to show here
-                    // If a player joins late, they still see gameplay
+                    renderRevealScreen();
                     break;
                 case 'PLAYING':
+                    document.getElementById('next-turn-btn').textContent = (state.turnIndex === state.players.filter(p => p.role !== 'OUT').length - 1) ? "Chuyển sang Bỏ Phiếu" : "Hoàn Thành Miêu Tả (Chuyển Lượt)";
                     document.getElementById('next-turn-btn').disabled = false;
-                    document.getElementById('next-turn-btn').textContent = (state.turnIndex === state.players.length - 1) ? "Chuyển sang Bỏ Phiếu" : "Hoàn Thành Miêu Tả (Chuyển Lượt)";
-                    // Only the current player can press the button
-                    if (state.turnOrder[state.turnIndex] !== userId) {
-                         document.getElementById('next-turn-btn').disabled = true;
-                         document.getElementById('next-turn-btn').textContent = `Chờ ${state.players.find(p => p.id === state.turnOrder[state.turnIndex])?.name} miêu tả...`;
-                    } else {
-                        document.getElementById('next-turn-btn').disabled = false;
-                    }
                     break;
                 case 'VOTING':
                     document.getElementById('gameplay-screen').classList.add('hidden');
@@ -358,14 +281,19 @@
         function renderPlayerList(state) {
             const listContainer = document.getElementById('player-list');
             listContainer.innerHTML = '';
-            const currentPlayerId = state.turnOrder[state.turnIndex];
+            
+            // Filter out players already voted out to adjust turn index
+            const activePlayers = state.players.filter(p => p.role !== 'OUT');
+            const currentActiveTurnOrder = state.turnOrder.filter(id => activePlayers.map(p => p.id).includes(id));
+            
+            const currentPlayerId = currentActiveTurnOrder[state.turnIndex];
 
             state.players.forEach((player, index) => {
                 const isTurn = player.id === currentPlayerId && state.status === 'PLAYING';
                 const isOut = player.role === 'OUT';
-                const isCurrentUser = player.id === userId;
-                const clickHandler = isCurrentUser ? `onclick="showPlayerCard()"` : '';
-                const roleColor = player.role === 'LIAR' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
+                // In local mode, clicking any card shows the secret to the single user/host
+                const clickHandler = `onclick="showPlayerCardModal('${player.id}')"`;
+                const roleColor = player.finalRole === 'LIAR' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
                 
                 let statusText = '';
                 if (isOut) {
@@ -373,11 +301,11 @@
                 }
 
                 listContainer.innerHTML += `
-                    <div ${clickHandler} class="p-4 rounded-xl shadow-lg border-2 ${isTurn ? 'border-yellow-500 ring-4 ring-yellow-200 flash' : 'border-gray-200'} ${isOut ? 'opacity-50 line-through' : ''} bg-white transition duration-300 hover:shadow-xl ${isCurrentUser ? 'cursor-pointer' : ''}">
-                        <p class="font-bold text-xl text-gray-900">${index + 1}. ${player.name} ${isCurrentUser ? '(Bạn)' : ''}</p>
+                    <div ${clickHandler} class="p-4 rounded-xl shadow-lg border-2 ${isTurn ? 'border-yellow-500 ring-4 ring-yellow-200 flash' : 'border-gray-200'} ${isOut ? 'opacity-50 line-through' : ''} bg-white transition duration-300 hover:shadow-xl cursor-pointer">
+                        <p class="font-bold text-xl text-gray-900">${index + 1}. ${player.name}</p>
                         <p class="text-xs text-gray-500 mt-1">ID: ${player.id.substring(0, 8)}...</p>
                         ${isOut ? `<p class="mt-2 text-sm font-semibold p-1 rounded-full ${roleColor}">${statusText} (Đã bị loại)</p>` : `<p class="mt-2 text-sm font-medium text-gray-400">Đang tham gia...</p>`}
-                        ${isCurrentUser && state.status !== 'SETUP' && state.status !== 'GAME_OVER' ? '<p class="text-xs text-indigo-500 font-medium mt-2"><i data-lucide="scan-line" class="w-3 h-3 inline mr-1"></i>Xem thẻ bài</p>' : ''}
+                        ${!isOut && state.status !== 'SETUP' && state.status !== 'GAME_OVER' ? '<p class="text-xs text-indigo-500 font-medium mt-2"><i data-lucide="scan-line" class="w-3 h-3 inline mr-1"></i>Xem thẻ bài</p>' : ''}
                     </div>
                 `;
             });
@@ -385,12 +313,15 @@
         }
 
         function renderTurnDisplay(state) {
-            const currentTurnId = state.turnOrder[state.turnIndex];
+            const activePlayers = state.players.filter(p => p.role !== 'OUT');
+            const currentActiveTurnOrder = state.turnOrder.filter(id => activePlayers.map(p => p.id).includes(id));
+
+            const currentTurnId = currentActiveTurnOrder[state.turnIndex];
             const currentPlayer = state.players.find(p => p.id === currentTurnId);
             
             document.getElementById('current-player-turn').textContent = currentPlayer ? currentPlayer.name : 'Đã kết thúc vòng miêu tả';
             
-            const turnNames = state.turnOrder.map(id => state.players.find(p => p.id === id)?.name);
+            const turnNames = currentActiveTurnOrder.map(id => state.players.find(p => p.id === id)?.name);
             document.getElementById('turn-order-info').textContent = `Thứ tự: ${turnNames.join(' → ')}`;
         }
 
@@ -400,26 +331,14 @@
             votingOptions.innerHTML = '';
 
             const availablePlayers = state.players.filter(p => p.role !== 'OUT');
-            const currentPlayer = state.players.find(p => p.id === userId);
             
-            if (!currentPlayer || currentPlayer.role === 'OUT') {
-                document.getElementById('submit-vote-btn').disabled = true;
-                document.getElementById('submit-vote-btn').textContent = 'Bạn đã bị loại. Chờ kết quả...';
-                return;
-            } else {
-                document.getElementById('submit-vote-btn').disabled = false;
-                document.getElementById('submit-vote-btn').textContent = 'Gửi Phiếu Bầu';
-            }
-
             availablePlayers.forEach(player => {
-                if (player.id !== userId) { // Can't vote for yourself
-                    votingOptions.innerHTML += `
-                        <button onclick="selectVote('${player.id}')" id="vote-btn-${player.id}"
-                            class="p-4 rounded-lg shadow-md border-2 border-indigo-200 bg-white text-gray-800 font-medium hover:bg-indigo-100 transition duration-150">
-                            ${player.name}
-                        </button>
-                    `;
-                }
+                votingOptions.innerHTML += `
+                    <button onclick="selectVote('${player.id}')" id="vote-btn-${player.id}"
+                        class="p-4 rounded-lg shadow-md border-2 border-indigo-200 bg-white text-gray-800 font-medium hover:bg-indigo-100 transition duration-150">
+                        ${player.name}
+                    </button>
+                `;
             });
 
             document.getElementById('submit-vote-btn').onclick = submitVote;
@@ -428,14 +347,21 @@
         function renderResult(resultId) {
              document.getElementById('result-screen').classList.remove('hidden');
 
-             const LiarsFound = currentGame.players.filter(p => p.finalRole === 'LIAR' && p.role === 'OUT').length; // Correctly count Liars that are OUT
-             const TotalLiars = currentGame.numLiars;
-             const NormalsLeft = currentGame.players.filter(p => p.role === 'NORMAL').length;
-             const LiarsLeft = currentGame.players.filter(p => p.role === 'LIAR').length;
+             const LiarsFound = gameState.players.filter(p => p.finalRole === 'LIAR' && p.role === 'OUT').length;
+             const TotalLiars = gameState.numLiars;
+             const NormalsLeft = gameState.players.filter(p => p.role === 'NORMAL').length;
+             const LiarsLeft = gameState.players.filter(p => p.role === 'LIAR').length;
 
-             if (currentGame.status === 'GAME_OVER') {
+             // Remove previous action button before adding new one
+             const resultScreen = document.getElementById('result-screen');
+             const existingBtn = resultScreen.querySelector('.mt-6.bg-indigo-600');
+             if (existingBtn) {
+                 existingBtn.remove();
+             }
+
+             if (gameState.status === 'GAME_OVER') {
                  // Final result
-                 if (currentGame.winCondition === 'NORMAL') {
+                 if (gameState.winCondition === 'NORMAL') {
                     document.getElementById('result-title').textContent = 'NGƯỜI BÌNH THƯỜNG THẮNG CUỘC!';
                     document.getElementById('result-title').classList.remove('text-red-700');
                     document.getElementById('result-title').classList.add('text-green-700');
@@ -444,14 +370,14 @@
                     document.getElementById('result-title').classList.remove('text-green-700');
                     document.getElementById('result-title').classList.add('text-red-700');
                  }
-                 document.getElementById('revealed-player').textContent = `Tất cả đã bị lộ. Từ khóa bí mật: ${currentGame.secretWord}.`; // Secret word only revealed at the end
+                 document.getElementById('revealed-player').textContent = `Tất cả đã bị lộ. Từ khóa bí mật: ${gameState.secretWord}.`;
                  document.getElementById('game-status-summary').innerHTML = `
                     <p>Tổng Liar: ${TotalLiars}. Liar bị tìm thấy: ${LiarsFound}.</p>
                     <p>Cảm ơn các bạn đã tham gia!</p>
                  `;
              } else {
                 // Mid-game vote reveal (REVEALING_VOTE)
-                const player = currentGame.players.find(p => p.id === resultId);
+                const player = gameState.players.find(p => p.id === resultId);
                 const roleText = player.finalRole === 'LIAR' ? 'KẺ NÓI DỐI' : 'NGƯỜI BÌNH THƯỜNG';
                 const roleClass = player.finalRole === 'LIAR' ? 'text-red-700' : 'text-green-700';
 
@@ -468,13 +394,6 @@
                     </p>
                 `;
                 
-                // Remove previous action button before adding new one
-                const resultScreen = document.getElementById('result-screen');
-                const existingBtn = resultScreen.querySelector('.mt-6.bg-indigo-600');
-                if (existingBtn) {
-                    existingBtn.remove();
-                }
-
                 // Show button to continue or finish
                 const nextActionBtn = document.createElement('button');
                 nextActionBtn.className = 'mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200';
@@ -494,27 +413,29 @@
              }
         }
         
-        // --- PLAYER CARD MODAL FUNCTIONS (New Feature) ---
-        window.showPlayerCard = () => {
-            if (!currentGame || (currentGame.status !== 'PLAYING' && currentGame.status !== 'VOTING')) {
+        // --- PLAYER CARD MODAL FUNCTIONS ---
+        window.showPlayerCardModal = (playerId) => {
+            if (!gameState || (gameState.status !== 'PLAYING' && gameState.status !== 'VOTING')) {
                 showMessage("Không thể xem thẻ bài lúc này.", true);
                 return;
             }
 
-            const player = currentGame.players.find(p => p.id === userId);
-            if (!player) return;
+            const player = gameState.players.find(p => p.id === playerId);
+            if (!player || player.role === 'OUT') return;
 
             const modal = document.getElementById('player-card-modal');
             const roleEl = document.getElementById('modal-your-role');
             const wordEl = document.getElementById('modal-secret-word');
             const goalEl = document.getElementById('modal-liar-goal');
+            const nameEl = document.getElementById('modal-player-name');
 
             const isLiar = player.role === 'LIAR';
             
             // Update content
+            nameEl.textContent = player.name;
             roleEl.textContent = isLiar ? 'KẺ NÓI DỐI' : 'NGƯỜI BÌNH THƯỜNG';
             roleEl.className = `text-2xl font-bold p-2 rounded-md inline-block ${isLiar ? 'bg-red-500 text-white shadow-xl' : 'bg-green-500 text-white shadow-xl'}`;
-            wordEl.textContent = isLiar ? '??? (CỐ GẮNG ĐOÁN TỪ)' : currentGame.secretWord;
+            wordEl.textContent = isLiar ? '??? (CỐ GẮNG ĐOÁN TỪ)' : gameState.secretWord;
             
             if (isLiar) {
                 goalEl.textContent = 'Mục tiêu: Đừng để bị phát hiện và cố gắng đoán từ khóa thật qua lời miêu tả của người khác!';
@@ -528,17 +449,82 @@
             lucide.createIcons();
         };
 
-        window.hidePlayerCard = () => {
+        window.hidePlayerCardModal = () => {
             document.getElementById('player-card-modal').classList.add('hidden');
         };
-        // --- END PLAYER CARD MODAL FUNCTIONS ---
+
+        // --- ROLE REVEAL FLOW (Local Game Specific) ---
+        
+        function renderRevealScreen() {
+             hideAllScreens();
+             document.getElementById('reveal-screen').classList.remove('hidden');
+             revealIndex = 0;
+             updateRevealPlayerName();
+        }
+
+        function updateRevealPlayerName() {
+            const player = gameState.players[revealIndex];
+            const nextButton = document.querySelector('#reveal-screen button');
+            
+            document.getElementById('current-player-name-reveal').textContent = player.name;
+            
+            if (revealIndex < gameState.players.length) {
+                nextButton.textContent = 'Hiện Thẻ Bài';
+                nextButton.onclick = showNextReveal;
+            } else {
+                nextButton.textContent = 'Bắt Đầu Vòng Miêu Tả';
+                nextButton.onclick = () => {
+                    gameState.status = 'PLAYING';
+                    renderGame(gameState);
+                };
+            }
+        }
+
+        window.showNextReveal = () => {
+            // Player is the one currently in revealIndex
+            const player = gameState.players[revealIndex];
+            
+            document.getElementById('reveal-screen').classList.add('hidden');
+            document.getElementById('player-card-view').classList.remove('hidden');
+            
+            const isLiar = player.role === 'LIAR';
+            
+            // Update the temporary card view
+            document.getElementById('reveal-player-name').textContent = player.name;
+            const roleEl = document.getElementById('reveal-your-role');
+            roleEl.textContent = isLiar ? 'KẺ NÓI DỐI' : 'NGƯỜI BÌNH THƯỜNG';
+            roleEl.className = `text-2xl font-bold p-2 rounded-md inline-block ${isLiar ? 'bg-red-500 text-white shadow-xl' : 'bg-green-500 text-white shadow-xl'}`;
+            document.getElementById('reveal-secret-word').textContent = isLiar ? '??? (CỐ GẮNG ĐOÁN TỪ)' : gameState.secretWord;
+            
+            const goalEl = document.getElementById('reveal-liar-goal');
+            if (isLiar) {
+                goalEl.textContent = 'Mục tiêu: Đừng để bị phát hiện và cố gắng đoán từ khóa thật qua lời miêu tả của người khác!';
+                goalEl.classList.remove('hidden');
+            } else {
+                goalEl.classList.add('hidden');
+            }
+        }
+        
+        window.hidePlayerCardView = () => {
+            document.getElementById('player-card-view').classList.add('hidden');
+            
+            revealIndex++;
+            if (revealIndex < gameState.players.length) {
+                // Show the next player's name on the instruction screen
+                document.getElementById('reveal-screen').classList.remove('hidden');
+                updateRevealPlayerName();
+            } else {
+                // All players revealed, start the game
+                gameState.status = 'PLAYING';
+                renderGame(gameState);
+            }
+        }
+
 
         // --- GAME ACTIONS ---
 
         // Called by button
-        window.startGame = async () => {
-            if (!userId) { showMessage("Lỗi xác thực người dùng.", true); return; }
-
+        window.startGame = () => {
             const numPlayers = parseInt(document.getElementById('num-players').value);
             const numLiars = parseInt(document.getElementById('num-liars').value);
             const errorElement = document.getElementById('setup-error');
@@ -550,7 +536,7 @@
             }
 
             if (numPlayers < 3 || numPlayers > MAX_PLAYERS) { errorElement.textContent = "Số người chơi phải từ 3 đến 15."; errorElement.classList.remove('hidden'); return; }
-            if (numLiars < 1 || numLiars >= numPlayers - numLiars) { errorElement.textContent = "Số lượng Kẻ nói dối không hợp lệ (nên ít hơn số người bình thường)."; errorElement.classList.remove('hidden'); return; }
+            if (numLiars < 1 || numLiars >= numPlayers - numLiars) { errorElement.textContent = "Số lượng Kẻ nói dối không hợp lệ (phải ít hơn hoặc bằng số người bình thường)."; errorElement.classList.remove('hidden'); return; }
             errorElement.classList.add('hidden');
 
             const allWords = ALL_WORDS;
@@ -558,12 +544,10 @@
             const category = Object.keys(WORD_LIST).find(cat => WORD_LIST[cat].includes(secretWord)) || 'Hỗn hợp';
 
             let players = names.map((name, index) => ({
-                id: crypto.randomUUID(), // Unique ID for the player within this game
+                id: crypto.randomUUID(),
                 name: name,
-                role: 'NORMAL',
-                finalRole: 'NORMAL', // Used only after being voted out
-                vote: null,
-                isHost: index === 0, // First player is host, can start
+                role: 'NORMAL', // 'NORMAL', 'LIAR', or 'OUT'
+                finalRole: 'NORMAL', // The role they were assigned initially
             }));
 
             // Assign Liar roles
@@ -573,99 +557,38 @@
             // Randomize turn order for the first round
             const turnOrder = shuffleArray(players.map(p => p.id));
 
-            const newGame = {
-                status: 'PLAYING', // Start directly into playing after local reveal
+            gameState = {
+                status: 'REVEAL', // Start with local revealing process
                 players: players,
                 secretWord: secretWord,
                 category: category,
                 numLiars: numLiars,
                 turnOrder: turnOrder,
                 turnIndex: 0,
-                votes: {}, // { playerId: [votedForId, ...] }
                 winCondition: null // NORMAL or LIAR
             };
             
-            try {
-                // Use a generic ID for the room since it's a single collaborative document
-                await setDoc(gameRef, newGame);
-                // Immediately show reveal screen locally (Firestore listener will handle global state)
-                showRevealScreen(newGame);
-            } catch (error) {
-                console.error("Error starting game:", error);
-                showMessage("Lỗi khi bắt đầu trò chơi. Vui lòng thử lại.", true);
-            }
+            renderGame(gameState);
         };
 
-        // Called by local button click
-        window.showRevealScreen = (state) => {
-            hideAllScreens();
-            const player = state.players.find(p => p.id === userId) || state.players[0]; // Fallback for host during setup
-
-            if (!player) return; // Should not happen
-
-            document.getElementById('reveal-screen').classList.remove('hidden');
-            const roleEl = document.getElementById('your-role');
-            const wordEl = document.getElementById('secret-word');
-            const goalEl = document.getElementById('liar-goal');
-            
-            const isLiar = player.role === 'LIAR';
-            roleEl.textContent = isLiar ? 'KẺ NÓI DỐI' : 'NGƯỜI BÌNH THƯỜNG';
-            roleEl.className = `text-2xl font-bold p-2 rounded-md inline-block ${isLiar ? 'bg-red-500 text-white shadow-xl' : 'bg-green-500 text-white shadow-xl'}`;
-            wordEl.textContent = isLiar ? '??? (CỐ GẮNG ĐOÁN TỪ)' : state.secretWord;
-            
-            if (isLiar) {
-                goalEl.textContent = 'Mục tiêu: Đừng để bị phát hiện và cố gắng đoán từ khóa thật qua lời miêu tả của người khác!';
-                goalEl.classList.remove('hidden');
-            } else {
-                goalEl.classList.add('hidden');
-            }
-        }
-        
-        // Called by local button click
-        window.hideRevealScreen = () => {
-             document.getElementById('reveal-screen').classList.add('hidden');
-             // The Firestore listener will automatically render the gameplay screen
-        }
-
         // Called by button
-        window.nextTurn = async () => {
-            if (!currentGame || currentGame.status !== 'PLAYING') return;
+        window.nextTurn = () => {
+            if (!gameState || gameState.status !== 'PLAYING') return;
 
-            const currentTurnId = currentGame.turnOrder[currentGame.turnIndex];
-            if (currentTurnId !== userId) {
-                showMessage("Chưa đến lượt bạn. Vui lòng chờ.", true);
-                return;
-            }
-
-            const nextIndex = currentGame.turnIndex + 1;
+            const activePlayers = gameState.players.filter(p => p.role !== 'OUT');
+            const currentActiveTurnOrder = gameState.turnOrder.filter(id => activePlayers.map(p => p.id).includes(id));
             
-            try {
-                await runTransaction(db, async (transaction) => {
-                    const doc = await transaction.get(gameRef);
-                    if (!doc.exists()) { throw "Document does not exist!"; }
-                    
-                    const state = doc.data();
-                    
-                    // Only continue if current user is still active
-                    const activePlayerIds = state.players.filter(p => p.role !== 'OUT').map(p => p.id);
-                    const currentActiveTurnOrder = state.turnOrder.filter(id => activePlayerIds.includes(id));
-                    
-                    if (state.turnIndex >= currentActiveTurnOrder.length) {
-                        throw "Turn index out of bounds or turn order not refreshed.";
-                    }
+            const nextIndex = gameState.turnIndex + 1;
 
-                    if (nextIndex < currentActiveTurnOrder.length) {
-                        // Continue playing
-                        transaction.update(gameRef, { turnIndex: nextIndex });
-                    } else {
-                        // End of descriptions, move to voting
-                        transaction.update(gameRef, { status: 'VOTING', turnIndex: 0 }); // Reset index for voting round (optional)
-                    }
-                });
-            } catch (error) {
-                console.error("Transaction failed:", error);
-                showMessage("Lỗi chuyển lượt. Vui lòng thử lại.", true);
+            if (nextIndex < currentActiveTurnOrder.length) {
+                // Continue playing
+                gameState.turnIndex = nextIndex;
+            } else {
+                // End of descriptions, move to voting
+                gameState.status = 'VOTING';
+                gameState.turnIndex = 0; // Reset index (not used in voting, but cleaner)
             }
+            renderGame(gameState);
         };
         
         // Voting logic
@@ -679,136 +602,80 @@
             document.getElementById(`vote-btn-${votedForId}`).classList.add('border-4', 'border-red-500', 'bg-red-100');
         };
 
-        window.submitVote = async () => {
-            if (!currentGame || currentGame.status !== 'VOTING') return;
-            if (!selectedVoteId) { showMessage("Vui lòng chọn một người để bỏ phiếu.", true); return; }
+        window.submitVote = () => {
+            if (!gameState || gameState.status !== 'VOTING') return;
+            if (!selectedVoteId) { showMessage("Vui lòng chọn một người để loại.", true); return; }
 
-            const votes = currentGame.votes || {};
+            const votedOutId = selectedVoteId;
+            let votedOutPlayer = gameState.players.find(p => p.id === votedOutId);
 
-            try {
-                await runTransaction(db, async (transaction) => {
-                    const doc = await transaction.get(gameRef);
-                    if (!doc.exists()) { throw "Document does not exist!"; }
-                    
-                    const state = doc.data();
-                    
-                    // Prevent double voting
-                    const currentVotes = state.votes || {};
-                    if (currentVotes[userId]) return; 
+            // Update player role
+            gameState.players = gameState.players.map(p => {
+                if (p.id === votedOutId) {
+                    return { ...p, role: 'OUT' };
+                }
+                return p;
+            });
+            
+            gameState.status = 'REVEALING_VOTE';
+            gameState.revealedPlayerId = votedOutId;
+            
+            // Check win condition instantly (although button will handle continue/end)
+            const NormalsLeft = gameState.players.filter(p => p.role === 'NORMAL').length;
+            const LiarsLeft = gameState.players.filter(p => p.role === 'LIAR').length;
 
-                    currentVotes[userId] = selectedVoteId;
-                    
-                    // Check if all active players have voted
-                    const activePlayers = state.players.filter(p => p.role !== 'OUT');
-                    const activeVoterIds = activePlayers.map(p => p.id).filter(id => id !== userId); // All active players except current user (who just voted)
-                    const votedPlayers = Object.keys(currentVotes).length;
-                    
-                    transaction.update(gameRef, { votes: currentVotes });
-
-                    if (votedPlayers === activePlayers.length) {
-                        // All voted, calculate result
-                        const voteCounts = {};
-                        Object.values(currentVotes).forEach(votedId => {
-                            voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
-                        });
-
-                        // Find the player with max votes
-                        let maxVotes = 0;
-                        let votedOutId = null;
-                        for (const id in voteCounts) {
-                            if (voteCounts[id] > maxVotes) {
-                                maxVotes = voteCounts[id];
-                                votedOutId = id;
-                            }
-                        }
-                        
-                        // If there's a tie, choose randomly among the tied highest vote counts
-                        let tiedCandidates = Object.keys(voteCounts).filter(id => voteCounts[id] === maxVotes);
-                        votedOutId = tiedCandidates[Math.floor(Math.random() * tiedCandidates.length)];
-
-                        // Update player role and status
-                        const updatedPlayers = state.players.map(p => {
-                            if (p.id === votedOutId) {
-                                return { ...p, role: 'OUT' }; // Mark as OUT for the next round
-                            }
-                            return p;
-                        });
-
-                        transaction.update(gameRef, {
-                            players: updatedPlayers,
-                            status: 'REVEALING_VOTE',
-                            revealedPlayerId: votedOutId,
-                            votes: {}, // Clear votes for next round
-                        });
-                    }
-                });
-            } catch (error) {
-                console.error("Transaction failed:", error);
-                showMessage("Lỗi gửi phiếu bầu. Vui lòng thử lại.", true);
+            if (LiarsLeft === 0) {
+                 endGame('NORMAL');
+            } else if (LiarsLeft >= NormalsLeft) {
+                 endGame('LIAR');
             }
+
+            renderGame(gameState);
+            selectedVoteId = null; // Clear vote
         };
         
         // Continue Game after vote reveal
-        window.continueGame = async () => {
-            if (!currentGame || currentGame.status !== 'REVEALING_VOTE') return;
+        window.continueGame = () => {
+            if (!gameState || gameState.status !== 'REVEALING_VOTE') return;
 
-            const activePlayers = currentGame.players.filter(p => p.role !== 'OUT');
+            const activePlayers = gameState.players.filter(p => p.role !== 'OUT');
             const turnOrder = shuffleArray(activePlayers.map(p => p.id));
 
-            try {
-                await setDoc(gameRef, {
-                    ...currentGame,
-                    status: 'PLAYING',
-                    turnOrder: turnOrder,
-                    turnIndex: 0,
-                    revealedPlayerId: null, // Clear revealed info
-                });
-            } catch (error) {
-                console.error("Error continuing game:", error);
-                showMessage("Lỗi khi tiếp tục trò chơi. Vui lòng thử lại.", true);
-            }
+            gameState.status = 'PLAYING';
+            gameState.turnOrder = turnOrder;
+            gameState.turnIndex = 0;
+            gameState.revealedPlayerId = null;
+            
+            renderGame(gameState);
         };
 
         // End Game
-        window.endGame = async (winCondition) => {
-             if (!currentGame) return;
-             try {
-                await setDoc(gameRef, {
-                    ...currentGame,
-                    status: 'GAME_OVER',
-                    winCondition: winCondition,
-                    revealedPlayerId: null,
-                });
-            } catch (error) {
-                console.error("Error ending game:", error);
-                showMessage("Lỗi khi kết thúc trò chơi. Vui lòng thử lại.", true);
-            }
+        window.endGame = (winCondition) => {
+             if (!gameState) return;
+             gameState.status = 'GAME_OVER';
+             gameState.winCondition = winCondition;
+             gameState.revealedPlayerId = null;
+             
+             renderGame(gameState);
         }
         
         // Reset Game
-        window.resetGame = async () => {
-             if (!currentGame) return;
-             // Set status to SETUP to allow new game configuration
-             try {
-                await setDoc(gameRef, {
-                    status: 'SETUP',
-                    players: [],
-                    numLiars: 1,
-                    secretWord: null,
-                    category: null,
-                    turnOrder: [],
-                    turnIndex: 0,
-                    votes: {},
-                    winCondition: null
-                });
-            } catch (error) {
-                console.error("Error resetting game:", error);
-                showMessage("Lỗi khi đặt lại trò chơi. Vui lòng thử lại.", true);
-            }
+        window.resetGame = () => {
+             gameState = {
+                status: 'SETUP',
+                players: [],
+                numLiars: 1,
+                secretWord: null,
+                category: null,
+                turnOrder: [],
+                turnIndex: 0,
+                winCondition: null
+            };
+            renderGame(gameState);
         }
 
         // --- START APP ---
-        window.onload = initializeFirebase;
+        window.onload = initializeGame;
     </script>
 </body>
 </html>
