@@ -136,9 +136,7 @@
             <p id="revealed-player" class="text-xl font-medium text-gray-800"></p>
             <p id="game-status-summary" class="text-lg text-gray-600"></p>
             
-            <button onclick="resetGame()" class="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200">
-                Chơi Ván Mới
-            </button>
+            <!-- Buttons are now injected dynamically via JavaScript based on game status -->
         </div>
 
     </div>
@@ -368,12 +366,11 @@
              const NormalsLeft = gameState.players.filter(p => p.role === 'NORMAL').length;
              const LiarsLeft = gameState.players.filter(p => p.role === 'LIAR').length;
 
-             // Remove previous action button before adding new one
              const resultScreen = document.getElementById('result-screen');
-             const existingBtn = resultScreen.querySelector('.mt-6.bg-indigo-600');
-             if (existingBtn) {
-                 existingBtn.remove();
-             }
+             
+             // Remove all previous action buttons to ensure clean display
+             const existingBtns = resultScreen.querySelectorAll('button');
+             existingBtns.forEach(btn => btn.remove());
 
              if (gameState.status === 'GAME_OVER') {
                  // Final result
@@ -391,6 +388,23 @@
                     <p>Tổng Liar: ${TotalLiars}. Liar bị tìm thấy: ${LiarsFound}.</p>
                     <p>Cảm ơn các bạn đã tham gia!</p>
                  `;
+                 
+                 // Option 1: Start New Round (Keep names)
+                 const newRoundBtn = document.createElement('button');
+                 newRoundBtn.className = 'mt-6 mr-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg';
+                 newRoundBtn.textContent = 'Chơi Vòng Mới (Giữ nguyên tên)';
+                 newRoundBtn.onclick = startNewRound;
+
+                 // Option 2: Reset Game (Clear names/settings)
+                 const resetBtn = document.createElement('button');
+                 resetBtn.className = 'mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg';
+                 resetBtn.textContent = 'Thiết Lập Mới (Xóa tên)';
+                 resetBtn.onclick = resetGame;
+                 
+                 // Append both buttons
+                 resultScreen.appendChild(newRoundBtn);
+                 resultScreen.appendChild(resetBtn);
+
              } else {
                 // Mid-game vote reveal (REVEALING_VOTE)
                 const player = gameState.players.find(p => p.id === resultId);
@@ -412,7 +426,7 @@
                 
                 // Show button to continue or finish
                 const nextActionBtn = document.createElement('button');
-                nextActionBtn.className = 'mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200';
+                nextActionBtn.className = 'mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg';
                 
                 if (LiarsLeft === 0) {
                     nextActionBtn.textContent = 'Người Bình Thường Thắng - Kết thúc Game';
@@ -661,6 +675,55 @@
             gameState.turnOrder = turnOrder;
             gameState.turnIndex = 0;
             gameState.revealedPlayerId = null;
+            
+            renderGame(gameState);
+        };
+
+        // Start New Round (Preserves names/settings)
+        window.startNewRound = () => {
+            if (!gameState || gameState.status !== 'GAME_OVER') {
+                showMessage("Lỗi: Không thể bắt đầu vòng mới khi trò chơi chưa kết thúc.", true);
+                resetGame();
+                return;
+            }
+
+            const numPlayers = gameState.players.length;
+            const numLiars = gameState.numLiars;
+            const names = gameState.players.map(p => p.name); // Giữ nguyên tên
+
+            // 1. Chọn từ khóa và danh mục mới
+            const allWords = ALL_WORDS;
+            const secretWord = allWords[Math.floor(Math.random() * allWords.length)];
+            const category = Object.keys(WORD_LIST).find(cat => WORD_LIST[cat].includes(secretWord)) || 'Hỗn hợp';
+
+            // 2. Tạo lại danh sách người chơi, đặt lại vai trò và trạng thái
+            let players = names.map((name, index) => ({
+                id: crypto.randomUUID(), // Tạo ID mới để đảm bảo không bị lỗi state cũ
+                name: name,
+                role: 'NORMAL', 
+                finalRole: 'NORMAL', 
+            }));
+
+            // 3. Phân ngẫu nhiên vai trò Kẻ nói dối
+            let liarIndices = shuffleArray([...Array(numPlayers).keys()]).slice(0, numLiars);
+            liarIndices.forEach(i => { players[i].role = 'LIAR'; players[i].finalRole = 'LIAR'; });
+
+            // 4. Ngẫu nhiên thứ tự miêu tả
+            const turnOrder = shuffleArray(players.map(p => p.id));
+
+            gameState = {
+                status: 'REVEAL', // Bắt đầu quá trình tiết lộ vai trò
+                players: players,
+                secretWord: secretWord,
+                category: category,
+                numLiars: numLiars,
+                turnOrder: turnOrder,
+                turnIndex: 0,
+                winCondition: null 
+            };
+            
+            // Đặt lại index tiết lộ để bắt đầu từ người chơi đầu tiên
+            revealIndex = 0; 
             
             renderGame(gameState);
         };
