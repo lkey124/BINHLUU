@@ -135,7 +135,8 @@
             <div id="vote-result-info" class="p-4 rounded-lg bg-gray-100">
                 <!-- Nội dung kết quả bỏ phiếu -->
             </div>
-            <button onclick="closeModal('vote-modal'); resetGame()" class="btn-secondary mt-6 bg-green-600 hover:bg-green-700">Chơi ván mới</button>
+            <!-- Thêm ID để JS có thể cập nhật handler và text -->
+            <button id="vote-modal-action-btn" class="btn-secondary mt-6 bg-green-600 hover:bg-green-700">Chơi ván mới</button>
         </div>
     </div>
 
@@ -279,6 +280,7 @@
     const MAX_PLAYERS = 15;
     let descriptionOrder = []; 
     let currentSpeakerIndex = -1; 
+    let lastVoteResult = null; // Lưu kết quả bầu chọn để dùng cho continueGame
 
     // --- CÁC HÀM TIỆN ÍCH ---
 
@@ -428,6 +430,7 @@
             button.onclick = () => revealRole(player);
             
             playerButtonsList.appendChild(button);
+            // Thêm người chơi vào danh sách bỏ phiếu
             accusedSelect.innerHTML += `<option value="${player.uid}">${player.name}</option>`;
         });
 
@@ -483,17 +486,49 @@
         }
     }
 
+    // --- GAME END / CONTINUE LOGIC ---
+    
     function endGame() {
          const accusedUid = document.getElementById('accused-player').value;
          if (!accusedUid) return customAlert('Vui lòng chọn một người bị tình nghi.');
 
          const accusedPlayer = players.find(p => p.uid === accusedUid);
-         const liars = players.filter(p => p.role === 'Liar');
          
-         renderVoteResult(accusedPlayer, liars);
+         // Store information needed for the modal and next round logic
+         const liars = players.filter(p => p.role === 'Liar');
+         lastVoteResult = {
+             accusedPlayer: accusedPlayer,
+             isAccusedLiar: accusedPlayer.role === 'Liar',
+             liars: liars,
+             normalWord: players.find(p => p.role === 'Normal')?.word || '',
+             liarWord: liars[0]?.word || '' // Từ của người nói dối còn lại
+         };
+         
+         renderVoteResult(lastVoteResult);
          showModal('vote-modal');
     }
-    
+
+    function continueGame() {
+        const result = lastVoteResult;
+        
+        // Chỉ tiếp tục nếu vote thành công (Liar bị loại)
+        if (result.isAccusedLiar) {
+            // 1. Loại người chơi bị vote
+            players = players.filter(p => p.uid !== result.accusedPlayer.uid);
+            
+            // 2. Bắt đầu vòng mới: Xáo trộn thứ tự mô tả với những người còn lại
+            descriptionOrder = shuffleArray(players.map(p => p.uid));
+            
+            // 3. Reset index
+            currentSpeakerIndex = 0;
+            
+            // 4. Cập nhật UI
+            renderGameUI();
+            customAlert(`Đã loại ${result.accusedPlayer.name} (Người nói dối). Bắt đầu vòng mới!`);
+        }
+        // Nếu chọn Normal, logic trong renderVoteResult sẽ chuyển đến resetGame (GameOver)
+    }
+
     function revealRole(player) {
         const isLiar = player.role === 'Liar';
         const roleText = isLiar ? 'NGƯỜI NÓI DỐI' : 'NGƯỜI BÌNH THƯỜNG';
@@ -514,31 +549,48 @@
         showModal('role-modal');
     }
 
-    function renderVoteResult(accusedPlayer, liars) {
+    function renderVoteResult(result) {
         let resultMessage = '';
         let infoHtml = '';
         let resultBgClass = '';
-
-        const isAccusedLiar = accusedPlayer.role === 'Liar';
         
-        // Lấy từ của vòng chơi
-        const normalWord = players.find(p => p.role === 'Normal')?.word || '';
-        const liarWord = liars[0]?.word || '';
+        const liars = result.liars;
+        const accusedPlayer = result.accusedPlayer;
+        const liarsRemainingAfterVote = result.isAccusedLiar ? liars.length - 1 : liars.length;
+        
+        let buttonAction = 'continueGame'; 
+        let buttonText = 'TIẾP TỤC VÁN CHƠI (Vòng mới)';
+        let buttonBg = 'bg-yellow-600 hover:bg-yellow-700';
 
-        if (isAccusedLiar) {
-            resultMessage = `Kẻ bị tình nghi <span class="font-extrabold">${accusedPlayer.name.toUpperCase()}</span> CHÍNH XÁC LÀ <span class="text-red-600">NGƯỜI NÓI DỐI</span>!`;
-            infoHtml += '<p class="text-2xl font-bold text-green-600 mb-2">PHE BÌNH THƯỜNG THẮNG!</p>';
-            infoHtml += `<p class="text-xl">Người nói dối là: ${liars.map(l => l.name).join(', ')}</p>`;
-            resultBgClass = 'bg-green-100';
+        if (result.isAccusedLiar) {
+            // Case 1: Liar found
+            if (liarsRemainingAfterVote === 0) {
+                // Case 1a: All liars found -> Normal Win (Game Ends)
+                resultMessage = `Kẻ bị tình nghi <span class="font-extrabold">${accusedPlayer.name.toUpperCase()}</span> CHÍNH XÁC LÀ <span class="text-red-600">NGƯỜI NÓI DỐI</span>!`;
+                infoHtml += '<p class="text-2xl font-bold text-green-600 mb-2">PHE BÌNH THƯỜNG THẮNG CUỘC!</p>';
+                resultBgClass = 'bg-green-100';
+                buttonAction = 'resetGame';
+                buttonText = 'CHƠI VÁN MỚI';
+                buttonBg = 'bg-green-600 hover:bg-green-700';
+            } else {
+                // Case 1b: Liar found, but more remain -> Game Continues
+                resultMessage = `<span class="font-extrabold">${accusedPlayer.name.toUpperCase()}</span> là <span class="text-red-600">NGƯỜI NÓI DỐI</span>!`;
+                infoHtml += `<p class="text-xl font-bold text-green-600 mb-2">ĐÃ LOẠI 1 KẺ NÓI DỐI. CÒN LẠI ${liarsRemainingAfterVote} NGƯỜI.</p>`;
+                resultBgClass = 'bg-yellow-100';
+                // ButtonAction remains continueGame
+            }
         } else {
+            // Case 2: Normal player wrongly accused -> Liar Win (Game Ends)
             resultMessage = `Kẻ bị tình nghi <span class="font-extrabold">${accusedPlayer.name.toUpperCase()}</span> LÀ <span class="text-green-600">NGƯỜI BÌNH THƯỜNG</span>!`;
-            infoHtml += '<p class="text-2xl font-bold text-red-600 mb-2">PHE NÓI DỐI THẮNG!</p>';
-            infoHtml += `<p class="text-xl">Người nói dối là: ${liars.map(l => l.name).join(', ')}</p>`;
+            infoHtml += '<p class="text-2xl font-bold text-red-600 mb-2">PHE NÓI DỐI THẮNG CUỘC!</p>';
             resultBgClass = 'bg-red-100';
+            buttonAction = 'resetGame';
+            buttonText = 'CHƠI VÁN MỚI';
+            buttonBg = 'bg-red-600 hover:bg-red-700';
         }
 
-        infoHtml += `<p class="mt-4 text-lg">Từ của Người bình thường: <span class="font-extrabold text-green-700">${normalWord.toUpperCase()}</span></p>`;
-        infoHtml += `<p class="text-lg">Từ của Người nói dối: <span class="font-extrabold text-red-700">${liarWord.toUpperCase()}</span></p>`;
+        infoHtml += `<p class="mt-4 text-lg">Từ của Người bình thường: <span class="font-extrabold text-green-700">${result.normalWord.toUpperCase()}</span></p>`;
+        infoHtml += `<p class="text-lg">Từ của Người nói dối: <span class="font-extrabold text-red-700">${result.liarWord.toUpperCase()}</span></p>`;
 
 
         // Hiển thị modal kết quả
@@ -548,12 +600,26 @@
                 ${infoHtml}
             </div>
         `;
+        
+        // Set the modal button handler dynamically
+        const modalButton = document.getElementById('vote-modal').querySelector('.modal-content button');
+        modalButton.textContent = buttonText;
+        modalButton.className = `btn-secondary mt-6 ${buttonBg}`;
+        modalButton.onclick = () => {
+            closeModal('vote-modal');
+            if (buttonAction === 'continueGame') {
+                continueGame();
+            } else {
+                resetGame();
+            }
+        };
     }
 
     function resetGame() {
         players = [];
         descriptionOrder = [];
         currentSpeakerIndex = -1;
+        lastVoteResult = null;
         document.getElementById('game-section').classList.add('hidden');
         document.getElementById('setup-section').classList.remove('hidden');
         // Reset player inputs to default 5 people
